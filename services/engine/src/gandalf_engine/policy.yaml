@@ -1,0 +1,12 @@
+# Score -> decision. Phase 1 thresholds are placeholders; from phase 3 on they are
+# chosen by minimising  custo_fn * FN + custo_fp * FP  on the validation period.
+versao: "p1"
+ator:
+  limiar_automacao: 0.5   # above this the actor is classified as undeclared automation
+decisao:
+  desafiar_acima_de: 0.6
+  negar_acima_de: 0.97    # deny only when nearly certain; a challenge is the cheaper mistake
+custos:                   # used by the offline threshold search
+  custo_fn: 20.0          # fraud that got through
+  custo_fp: 5.0           # good customer blocked
+  custo_desafio: 0.5      # friction of a passkey prompt

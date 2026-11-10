@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Carrinho · Loja da Montanha{% endblock %}
+{% block conteudo %}
+<h1>Carrinho</h1>
+{% if linhas %}
+<table>
+  <thead><tr><th>Produto</th><th>Qtd.</th><th>Subtotal</th></tr></thead>
+  <tbody>
+  {% for l in linhas %}
+    <tr><td>{{ l.nome }}</td><td>{{ l.qtd }}</td><td>R$ {{ "%.2f"|format(l.subtotal) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p><strong>Total: R$ {{ "%.2f"|format(total) }}</strong></p>
+<p><a href="/checkout">Finalizar compra</a></p>
+{% else %}
+<p>Seu carrinho está vazio. <a href="/">Ver o catálogo</a></p>
+{% endif %}
+{% endblock %}

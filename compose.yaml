@@ -1,0 +1,96 @@
+# Gandalf — AgentGate.  `docker compose up` brings the whole lab up.
+# Every published port binds to 127.0.0.1: this is a lab, not a deployment.
+# Memory limits are sized for an 8 GB notebook (whole stack ~1.3 GB).
+
+name: gandalf
+
+x-keys: &keys
+  GANDALF_SERVICE_KEY: ${GANDALF_SERVICE_KEY:-dev-only-change-me}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: gandalf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gandalf}
+      POSTGRES_DB: gandalf
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30"]
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gandalf -d gandalf"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+
+  redis:
+    image: redis:8-alpine
+    # No persistence: the windows are rebuilt from traffic. Raw IPs live only here, <= 24 h.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "200mb", "--maxmemory-policy", "volatile-ttl"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+
+  engine:
+    build: { context: ., dockerfile: docker/engine.Dockerfile }
+    environment:
+      <<: *keys
+      GANDALF_REDIS_URL: redis://redis:6379/0
+      GANDALF_DATABASE_URL: postgresql://gandalf:${POSTGRES_PASSWORD:-gandalf}@postgres:5432/gandalf
+      GANDALF_IP_HMAC_KEY: ${GANDALF_IP_HMAC_KEY:-dev-only-change-me}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["127.0.0.1:8000:8000"]   # for the load test and the simulator's fast path
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/saude', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    mem_limit: 600m
+
+  shop:
+    build: { context: ., dockerfile: docker/shop.Dockerfile }
+    environment:
+      <<: *keys
+      SHOP_ENGINE_URL: http://engine:8000
+      SHOP_CARD_HMAC_KEY: ${SHOP_CARD_HMAC_KEY:-dev-only-change-me}
+      SHOP_BEHIND_PROXY: "1"   # true because the shop publishes no port: only the proxy reaches it
+      SHOP_LAB_MODE: ${SHOP_LAB_MODE:-1}
+    depends_on:
+      engine: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/saude', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    mem_limit: 200m
+
+  proxy:
+    build: { context: ., dockerfile: docker/proxy.Dockerfile }
+    environment:
+      FORWARD_URL: http://shop:8080
+    depends_on:
+      shop: { condition: service_healthy }
+    ports: ["127.0.0.1:8443:8443"]
+    volumes: ["certs:/certs"]
+    mem_limit: 64m
+
+  dashboard:
+    build: { context: ., dockerfile: docker/dashboard.Dockerfile }
+    environment:
+      DASHBOARD_DATABASE_URL: postgresql://gandalf:${POSTGRES_PASSWORD:-gandalf}@postgres:5432/gandalf
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["127.0.0.1:8501:8501"]
+    mem_limit: 300m
+
+volumes:
+  pgdata:
+  certs:

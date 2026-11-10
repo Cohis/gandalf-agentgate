@@ -1,0 +1,48 @@
+[project]
+name = "gandalf-agentgate"
+version = "0.1.0"
+description = "Gandalf — AgentGate: anti-agent abuse system. Real-time risk engine."
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/contracts", "packages/features", "services/engine", "services/shop"]
+
+[tool.uv.sources]
+gandalf-contracts = { workspace = true }
+gandalf-features = { workspace = true }
+gandalf-engine = { workspace = true }
+gandalf-shop = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "gandalf-contracts",
+    "gandalf-features",
+    "gandalf-engine",
+    "gandalf-shop",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "fakeredis>=2.26",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "locust>=2.47",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["e2e: needs the compose stack running"]
+addopts = "-m 'not e2e'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+"loadtest/**" = ["S"]

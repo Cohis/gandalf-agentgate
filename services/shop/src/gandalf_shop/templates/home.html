@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>Catálogo</h1>
+<p class="muted">Primeira compra? Use o cupom <strong>PRIMEIRA10</strong> e ganhe R$ 10,00 de desconto.</p>
+<ul class="grade">
+  {% for pid, p in produtos.items() %}
+  <li class="cartao">
+    <h2><a href="/produto/{{ pid }}">{{ p.nome }}</a></h2>
+    <p>R$ {{ "%.2f"|format(p.preco) }}</p>
+    <p class="muted">{{ p.estoque }} em estoque</p>
+    <form method="post" action="/carrinho/adicionar">
+      <input type="hidden" name="pid" value="{{ pid }}">
+      <input type="hidden" name="telemetria" value="">
+      <button type="submit">Adicionar ao carrinho</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

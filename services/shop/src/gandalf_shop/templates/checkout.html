@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Pagamento · Loja da Montanha{% endblock %}
+{% block conteudo %}
+<h1>Pagamento</h1>
+{% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+{% if linhas %}
+<p><strong>Total: R$ {{ "%.2f"|format(total) }}</strong></p>
+<form class="pilha" method="post" action="/checkout">
+  <label>Número do cartão (use um número de teste)
+    <input type="text" name="cartao" inputmode="numeric" autocomplete="cc-number" required></label>
+  <label>Cupom <input type="text" name="cupom" placeholder="{{ cupom }}"></label>
+  <label>Observações para a entrega (opcional) <textarea name="observacoes" rows="2"></textarea></label>
+  {% include "_armadilhas.html" %}
+  <button type="submit">Pagar</button>
+</form>
+{% else %}
+<p>Seu carrinho está vazio. <a href="/">Ver o catálogo</a></p>
+{% endif %}
+{% endblock %}

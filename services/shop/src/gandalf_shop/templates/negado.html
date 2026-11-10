@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo or "Não foi possível continuar" }} · Loja da Montanha{% endblock %}
+{% block conteudo %}
+<h1>{{ titulo or "Não foi possível continuar" }}</h1>
+<p>Não conseguimos concluir esta ação agora. Se você acha que isso é um engano, fale com o atendimento.</p>
+<p><a href="/">Voltar ao catálogo</a></p>
+{% endblock %}

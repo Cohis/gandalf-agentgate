@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Loja da Montanha{% endblock %}</title>
+  <style>
+    :root { --ink:#1d2433; --muted:#5c6577; --line:#d9dee8; --bg:#f6f7fa; --card:#fff; --accent:#2f5d50; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--ink); background:var(--bg); }
+    header, main, footer { max-width: 920px; margin: 0 auto; padding: 16px; }
+    header { display:flex; gap:16px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); }
+    header a.marca { font-weight:700; font-size:1.2rem; color:var(--ink); text-decoration:none; margin-right:auto; }
+    nav { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    a { color: var(--accent); }
+    .grade { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; padding:0; list-style:none; }
+    .cartao { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+    form.pilha { display:grid; gap:12px; max-width:440px; }
+    label { display:grid; gap:4px; font-weight:600; }
+    input, textarea { font:inherit; padding:9px 10px; border:1px solid var(--line); border-radius:8px; width:100%; }
+    button { font:inherit; font-weight:600; padding:9px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+    button.link { background:none; color:var(--accent); padding:0; text-decoration:underline; }
+    .erro { color:#a3261f; font-weight:600; }
+    .muted { color:var(--muted); font-size:.92rem; }
+    table { border-collapse:collapse; width:100%; } td, th { padding:8px; border-bottom:1px solid var(--line); text-align:left; }
+    /* Honeypot and canary: out of sight for sighted users. Assistive technology may
+       still expose them, which is why they are model signals and never a block. */
+    .fora-da-tela { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+    footer { border-top:1px solid var(--line); margin-top:32px; }
+  </style>
+</head>
+<body>
+<header>
+  <a class="marca" href="/">Loja da Montanha</a>
+  <nav aria-label="Principal">
+    <a href="/">Catálogo</a>
+    <a href="/sobre">Sobre</a>
+    <a href="/carrinho">Carrinho ({{ itens_carrinho }})</a>
+    {% if conta %}
+      <span class="muted">Olá, {{ conta.nome }}</span>
+      <form method="post" action="/sair"><button class="link" type="submit">Sair</button></form>
+    {% else %}
+      <a href="/login">Entrar</a>
+      <a href="/cadastro">Criar conta</a>
+    {% endif %}
+  </nav>
+</header>
+<main>
+{% block conteudo %}{% endblock %}
+</main>
+<footer class="muted">
+  Loja de laboratório do projeto Gandalf. Nenhuma venda é real.
+  Esta página mede o ritmo de uso (apenas valores agregados) para prevenção a fraudes.
+</footer>
+<script src="/static/telemetry.js" defer></script>
+</body>
+</html>
