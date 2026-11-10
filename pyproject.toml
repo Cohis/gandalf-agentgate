@@ -27,6 +27,16 @@ dev = [
     "mypy>=1.13",
     "locust>=2.47",
 ]
+ml = [
+    "lightgbm>=4.7",
+    "polars>=2.1",
+    "psycopg[binary]>=3.3",
+    "scikit-learn>=1.9",
+]
+sim = [
+    "patchright>=1.64",
+    "playwright>=1.65",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -46,3 +56,7 @@ ignore = ["S101"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
 "loadtest/**" = ["S"]
+# traffic generators: randomness is behaviour, not cryptography
+"simulator/**" = ["S311"]
+"attackers/**" = ["S311"]
+"jobs/**" = ["S608"]

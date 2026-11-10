@@ -17,7 +17,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any
@@ -56,6 +56,9 @@ class Settings:
     behind_proxy: bool = False  # True only when reachable solely through the trusted proxy
     lab_mode: bool = False  # accepts simulated client IP / clock from the traffic generators
     fail_open: bool = True  # engine unreachable: let the customer through and log it
+    # Shadow mode: ask the engine and record its verdict, but never block. This is how
+    # training data is collected: blocking would censor everything an attacker does next.
+    shadow: bool = False
     engine_timeout_s: float = 0.5
 
     @classmethod
@@ -69,6 +72,7 @@ class Settings:
             behind_proxy=e.get("SHOP_BEHIND_PROXY", "0") == "1",
             lab_mode=e.get("SHOP_LAB_MODE", "0") == "1",
             fail_open=e.get("SHOP_FAIL_OPEN", "1") == "1",
+            shadow=e.get("SHOP_SHADOW", "0") == "1",
         )
 
 
@@ -130,15 +134,15 @@ def client_ip(request: Request, s: Settings) -> str:
 
 
 def event_time(request: Request, s: Settings) -> datetime:
-    """Lab only: generators may pass a simulated clock to compress days into hours."""
-    if s.lab_mode and (raw := request.headers.get("x-lab-time")):
+    """Lab only: generators may shift the clock to spread sessions over simulated days.
+    The offset is added to the real clock, so timing inside a session stays real."""
+    now = datetime.now(UTC)
+    if s.lab_mode and (raw := request.headers.get("x-lab-time-offset")):
         try:
-            t = datetime.fromisoformat(raw)
-            if t.tzinfo:
-                return t
+            return now + timedelta(seconds=max(-3.2e7, min(3.2e7, float(raw))))
         except ValueError:
             pass
-    return datetime.now(UTC)
+    return now
 
 
 def create_app(
@@ -168,6 +172,11 @@ def create_app(
         response: Response = await call_next(request)
         if request.url.path.startswith("/static") or request.url.path == "/saude":
             return response
+        verdict = getattr(request.state, "lab_verdict", None)
+        if s.lab_mode and verdict is not None:
+            # Lets the lab's traffic generators join ground truth to the decision.
+            response.headers["x-lab-avaliacao-id"] = verdict.avaliacao_id
+            response.headers["x-lab-decisao"] = verdict.decisao.value
         opts: dict[str, Any] = {"httponly": True, "samesite": "lax", "secure": s.behind_proxy}
         response.set_cookie("sid", session_of(request)[0], **opts)
         response.set_cookie("did", device_of(request), max_age=31_536_000, **opts)
@@ -248,7 +257,9 @@ def create_app(
                 headers={"X-Gandalf-Key": s.service_key, "Content-Type": "application/json"},
             )
             r.raise_for_status()
-            return AssessResponse.model_validate_json(r.content)
+            verdict = AssessResponse.model_validate_json(r.content)
+            request.state.lab_verdict = verdict
+            return verdict
         except (httpx.HTTPError, ValidationError):
             log.exception("engine unavailable for %s", evento)
             if s.fail_open:
@@ -258,7 +269,7 @@ def create_app(
     def gate(request: Request, verdict: AssessResponse | None) -> Response | None:
         """None means 'go ahead'. Reasons are never shown to the visitor: they would
         teach an attacker what to change."""
-        if verdict is None or verdict.decisao is Decisao.aprovar:
+        if s.shadow or verdict is None or verdict.decisao is Decisao.aprovar:
             return None
         if verdict.decisao is Decisao.desafiar:
             return render(request, "desafio.html", status=401, desafio_id=verdict.desafio_id)

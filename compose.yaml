@@ -63,6 +63,7 @@ services:
       SHOP_CARD_HMAC_KEY: ${SHOP_CARD_HMAC_KEY:-dev-only-change-me}
       SHOP_BEHIND_PROXY: "1"   # true because the shop publishes no port: only the proxy reaches it
       SHOP_LAB_MODE: ${SHOP_LAB_MODE:-1}
+      SHOP_SHADOW: ${SHOP_SHADOW:-0}   # 1 = ask the engine but never block (data collection)
     depends_on:
       engine: { condition: service_healthy }
     healthcheck:

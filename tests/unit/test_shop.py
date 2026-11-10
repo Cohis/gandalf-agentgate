@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -112,13 +113,15 @@ def test_forwarded_headers_mean_nothing_without_the_proxy(engine: FakeEngine) ->
 
 def test_lab_headers_work_only_in_lab_mode(engine: FakeEngine) -> None:
     c = make(engine, lab_mode=True)
-    c.post(
+    r = c.post(
         "/cadastro",
         data={"nome": "A", "email": "x@example.com", "senha": "segredo1"},
-        headers={"X-Lab-Client-IP": "177.10.20.30", "X-Lab-Time": "2026-11-01T10:00:00+00:00"},
+        headers={"X-Lab-Client-IP": "177.10.20.30", "X-Lab-Time-Offset": "-864000"},
     )
+    assert r.headers["x-lab-avaliacao-id"] == "av_1" and r.headers["x-lab-decisao"] == "aprovar"
     assert engine.calls[0]["ip"] == "177.10.20.30"
-    assert engine.calls[0]["momento"].startswith("2026-11-01T10:00:00")
+    sent = datetime.fromisoformat(engine.calls[0]["momento"])
+    assert timedelta(days=9, hours=23) < datetime.now(UTC) - sent < timedelta(days=10, hours=1)
 
 
 def test_challenge_and_denial_hold_the_action_and_leak_no_reason(engine: FakeEngine) -> None:
@@ -185,3 +188,15 @@ def test_device_id_sent_to_engine_matches_the_cookie(engine: FakeEngine) -> None
     c.get("/")
     signup(c)
     assert engine.calls[0]["dispositivo_id"] == c.cookies["did"]
+
+
+def test_lab_headers_are_absent_outside_lab_mode(engine: FakeEngine) -> None:
+    assert "x-lab-avaliacao-id" not in signup(make(engine)).headers
+
+
+def test_shadow_mode_records_the_verdict_but_never_blocks(engine: FakeEngine) -> None:
+    engine.decisao = "negar"
+    c = make(engine, shadow=True, lab_mode=True)
+    r = signup(c)
+    assert r.status_code == 303 and r.headers["x-lab-decisao"] == "negar"
+    assert "a@example.com" in c.app.state.accounts  # type: ignore[attr-defined]
