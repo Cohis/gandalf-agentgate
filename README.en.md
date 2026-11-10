@@ -24,7 +24,7 @@ Work in progress, built in phases. This table states what actually exists today.
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 1 | Skeleton: contracts, rule-based engine, shop, telemetry, dashboard, compose | **code done; Docker run still to be validated** |
+| 1 | Skeleton: contracts, rule-based engine, shop, telemetry, dashboard, compose | **done and validated** |
 | 2 | Attackers 1 and 2, simulator, first LightGBM model, SHAP | to do |
 | 3 | Real AI agent (local LLM), recorded human sessions | to do |
 | 4 | Scale layer: embeddings, FAISS, HDBSCAN | to do |
@@ -34,6 +34,18 @@ Work in progress, built in phases. This table states what actually exists today.
 | 8 | Module B: IEEE-CIS Fraud Detection | to do |
 
 In phase 1 the score comes from a **hand-written heuristic** (`heuristica-0`), not a trained model. It exists so the pipeline works end to end and as the baseline the model will have to beat. There are no detection numbers to show yet.
+
+### Phase 1 measurements
+
+i5-12450HX notebook, 8 GB RAM, everything in Docker on the same machine, single engine worker.
+
+| Scenario | p50 | p99 |
+|---|---|---|
+| Steady 200 req/s, measured by the engine | 0.5 ms | 1.3 ms |
+| Steady 200 req/s, end to end (HTTP client) | 2.4 ms | 4.6 ms |
+| Burst: 200 requests in the same instant, every second (client) | 160 ms | 240 ms |
+
+The burst is the worst case for a single worker: all 200 requests queue at once and the engine takes about 0.9 ms to serve each. There is no model or embedding in the path yet; these numbers will grow in phases 2 and 4.
 
 ## Run it
 
@@ -55,7 +67,8 @@ Tests (no Docker needed):
 ```bash
 make test       # unit, contract and online/offline parity
 make e2e        # end to end, with the stack running
-make load       # 50 req/s for 60 s against the engine
+make load       # steady 200 req/s for 30 s against the engine
+make load-burst # worst case: 200 clients firing in the same instant
 ```
 
 ## How it works

@@ -51,7 +51,7 @@ async def test_redis_and_memory_stores_agree() -> None:
         req = AssessRequest.model_validate(raw)
         now = req.momento.timestamp()
         q = state_queries(req)
-        assert await redis_store.read(q, now) == memory.read(q, now), f"diverged at event {i}"
+        assert (await redis_store.read(q, now))[1] == memory.read(q, now), f"diverged at event {i}"
         w = state_writes(req, f"av_{i}")
         await redis_store.write(w, now)
         memory.write(w, now)

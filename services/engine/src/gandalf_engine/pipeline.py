@@ -27,7 +27,6 @@ from .storage import Record, Storage
 
 log = logging.getLogger("gandalf.pipeline")
 
-_IDEMPOTENCY_TTL_S = 86_400
 _BUCKETS_MS = (1, 2, 5, 10, 20, 50, 100, 250, 1000)
 
 
@@ -101,26 +100,19 @@ class Engine:
             stages[name] = round((now - mark) * 1000, 3)
             mark = now
 
-        degraded = False
-        idem_key = f"idem:{req.id_requisicao}"
-        try:
-            cached = await self._redis.get(idem_key)
-            if cached:
-                return AssessResponse.model_validate_json(cached)
-        except RedisError:
-            degraded = True
-        lap("idempotencia")
-
         net = self._enricher.lookup(req.ip)
         lap("enriquecimento")
 
         now = req.momento.timestamp()  # event time: deterministic for the offline replay
+        idem_key = f"idem:{req.id_requisicao}"
+        degraded = False
         counts: dict[str, int] = {}
-        if not degraded:
-            try:
-                counts = await self._state.read(state_queries(req), now)
-            except RedisError:
-                degraded = True
+        try:
+            cached, counts = await self._state.read(state_queries(req), now, idem_key)
+            if cached:
+                return AssessResponse.model_validate_json(cached)
+        except RedisError:
+            degraded = True
         lap("janelas")
 
         features = compute(req, counts, net)
@@ -165,9 +157,8 @@ class Engine:
 
         if not degraded:
             try:
-                await self._state.write(state_writes(req, avaliacao_id), now)
-                await self._redis.set(
-                    idem_key, resp.model_dump_json(), ex=_IDEMPOTENCY_TTL_S, nx=True
+                await self._state.write(
+                    state_writes(req, avaliacao_id), now, idem_key, resp.model_dump_json()
                 )
             except RedisError:
                 log.warning("state write failed for %s", avaliacao_id)

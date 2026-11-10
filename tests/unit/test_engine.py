@@ -93,10 +93,10 @@ def test_idempotent_on_id_requisicao(harness: Harness) -> None:
 def test_redis_down_degrades_instead_of_failing(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def boom(*a: object, **k: object) -> None:
+    def boom(*a: object, **k: object) -> None:
         raise RedisConnectionError("down")
 
-    monkeypatch.setattr(harness.redis, "get", boom)
+    monkeypatch.setattr(harness.redis, "pipeline", boom)
     out = harness.assess()
     assert out["modo_degradado"] is True
     assert out["decisao"] == "aprovar"

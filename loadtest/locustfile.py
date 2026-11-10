@@ -1,6 +1,10 @@
-"""Load test for POST /avaliar.
+"""Burst scenario for POST /avaliar (worst case, not the headline number).
 
-    make load          # 50 users, 60 s, against http://127.0.0.1:8000
+    make load-burst
+
+Locust users with ``constant_throughput`` all fire in the same instant each
+second, so this measures how long the single-worker engine takes to drain a burst
+of N simultaneous requests. For steady-state latency use ``loadtest/open_loop.py``.
 
 Refuses any host that is not local: this repository only ever attacks its own lab.
 """

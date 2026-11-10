@@ -1,4 +1,4 @@
-.PHONY: help up down logs test lint e2e load telemetry dev psql clean
+.PHONY: help up down logs test lint e2e load load-burst telemetry dev psql clean
 
 help:            ## list targets
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/'
@@ -26,9 +26,12 @@ lint:            ## ruff
 e2e:             ## end-to-end tests against the running lab
 	uv run --with "psycopg[binary]" pytest -q -m e2e tests/e2e
 
-load:            ## 50 RPS for 60 s against the engine; prints p50/p99
+load:            ## steady 200 req/s for 30 s; prints the engine's p50/p99
+	uv run python loadtest/open_loop.py --rps 200 --seconds 30
+
+load-burst:      ## worst case: 200 clients firing in the same instant, every second
 	uv run locust -f loadtest/locustfile.py --headless -H http://127.0.0.1:8000 \
-		-u 50 -r 50 -t 60s --only-summary
+		-u 200 -r 200 -t 30s --only-summary
 
 telemetry:       ## build the page script for local development
 	npx --yes esbuild@0.25.0 services/shop/telemetry/telemetry.ts --bundle --minify \

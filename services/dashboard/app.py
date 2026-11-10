@@ -74,10 +74,10 @@ por_minuto = query(
     INTERVALO,
 )
 st.subheader("Decisões por minuto")
-st.bar_chart(
-    por_minuto.pivot_table(index="minuto", columns="decisao", values="n", fill_value=0),
-    color=["#2f7d5b", "#c98a1a", "#b3372e"][: por_minuto.decisao.nunique()],
-)
+# Colours follow the decision, not the column position.
+CORES = {"aprovar": "#2f7d5b", "desafiar": "#c98a1a", "negar": "#b3372e"}
+serie = por_minuto.pivot_table(index="minuto", columns="decisao", values="n", fill_value=0)
+st.bar_chart(serie, color=[CORES[c] for c in serie.columns])
 
 esq, dir_ = st.columns(2)
 with esq:

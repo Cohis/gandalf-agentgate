@@ -24,7 +24,7 @@ Em construção, por fases. Esta tabela diz o que existe de verdade hoje.
 
 | Fase | Entrega | Estado |
 |---|---|---|
-| 1 | Esqueleto: contratos, motor com regras, loja, telemetria, painel, compose | **código pronto; falta validar no Docker** |
+| 1 | Esqueleto: contratos, motor com regras, loja, telemetria, painel, compose | **pronta e validada** |
 | 2 | Atacantes 1 e 2, simulador, primeiro modelo LightGBM, SHAP | a fazer |
 | 3 | Agente de IA real (LLM local), sessões humanas gravadas | a fazer |
 | 4 | Camada de escala: embeddings, FAISS, HDBSCAN | a fazer |
@@ -34,6 +34,18 @@ Em construção, por fases. Esta tabela diz o que existe de verdade hoje.
 | 8 | Módulo B: IEEE-CIS Fraud Detection | a fazer |
 
 Na fase 1 o score vem de uma **heurística escrita à mão** (`heuristica-0`), não de um modelo treinado. Ela existe para o pipeline funcionar de ponta a ponta e para servir de linha de base que o modelo terá de superar. Ainda não há nenhum número de detecção para mostrar.
+
+### Medições da fase 1
+
+Notebook i5-12450HX, 8 GB de RAM, tudo em Docker na mesma máquina, motor com 1 worker.
+
+| Cenário | p50 | p99 |
+|---|---|---|
+| 200 req/s constantes, medido pelo motor | 0,5 ms | 1,3 ms |
+| 200 req/s constantes, ponta a ponta (cliente HTTP) | 2,4 ms | 4,6 ms |
+| Rajada: 200 requisições no mesmo instante, a cada segundo (cliente) | 160 ms | 240 ms |
+
+A rajada é o pior caso de um único worker: as 200 requisições entram na fila juntas e o motor leva cerca de 0,9 ms para atender cada uma. Ainda não há modelo nem embeddings no caminho; esses números vão subir nas fases 2 e 4.
 
 ## Rodar
 
@@ -55,7 +67,8 @@ Testes (não precisam de Docker):
 ```bash
 make test       # unidade, contrato e paridade online/offline
 make e2e        # ponta a ponta, com o compose no ar
-make load       # 50 req/s por 60 s no motor
+make load       # 200 req/s constantes por 30 s no motor
+make load-burst # pior caso: 200 clientes disparando no mesmo instante
 ```
 
 ## Como funciona

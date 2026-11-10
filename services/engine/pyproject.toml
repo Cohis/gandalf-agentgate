@@ -8,7 +8,7 @@ dependencies = [
     "gandalf-features",
     "fastapi>=0.162,<1",
     "uvicorn[standard]>=0.54",
-    "redis>=8.1,<9",
+    "redis[hiredis]>=8.1,<9",
     "psycopg[binary,pool]>=3.3,<4",
     "pyyaml>=6",
 ]
