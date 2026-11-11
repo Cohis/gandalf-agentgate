@@ -7,6 +7,7 @@ import yaml
 from gandalf_contracts import Acao, Ator, Decisao, TipoAtor
 
 from .rules import Rule
+from .scoring import Thresholds
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,17 +30,23 @@ class Policy:
             raise ValueError("policy thresholds must satisfy 0 < desafiar <= negar <= 1")
         return p
 
-    def actor(self, score_automacao: float) -> Ator:
+    def actor(self, score_automacao: float, t: Thresholds | None = None) -> Ator:
         # Declared agents (verified signature + mandate) arrive in phase 5.
-        if score_automacao >= self.limiar_automacao:
+        limiar = t.desafiar if t else self.limiar_automacao
+        if score_automacao >= limiar:
             return Ator(tipo=TipoAtor.automacao_nao_declarada, confianca=score_automacao)
         return Ator(tipo=TipoAtor.humano, confianca=1.0 - score_automacao)
 
-    def decide(self, score_automacao: float, fired: list[Rule]) -> tuple[Decisao, Acao]:
-        """No single signal decides, except the hard rules written for the obvious cases."""
-        if any(r.decisao is Decisao.negar for r in fired) or score_automacao >= self.negar_acima_de:
+    def decide(
+        self, score_automacao: float, fired: list[Rule], t: Thresholds | None = None
+    ) -> tuple[Decisao, Acao]:
+        """No single signal decides, except the hard rules written for the obvious cases.
+        A trained model brings its own operating points; otherwise the file's apply."""
+        desafiar = t.desafiar if t else self.desafiar_acima_de
+        negar = t.negar if t else self.negar_acima_de
+        if any(r.decisao is Decisao.negar for r in fired) or score_automacao >= negar:
             return Decisao.negar, Acao.nenhuma
-        if fired or score_automacao >= self.desafiar_acima_de:
+        if fired or score_automacao >= desafiar:
             # Passkey, not captcha: multimodal models solve captchas, but the agent
             # does not hold the account owner's authenticator.
             return Decisao.desafiar, Acao.exigir_passkey

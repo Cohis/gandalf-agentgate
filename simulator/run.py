@@ -30,9 +30,23 @@ VIEWPORTS = ((1366, 768), (1440, 900), (1536, 864), (1920, 1080), (1280, 720))
 SESSION_TIMEOUT_S = 240
 
 
-async def _context(browser: Any, base: str, ip: str, clock: Clock, rng: random.Random) -> Any:
+def _desktop_ua(browser: Any) -> str:
+    """Headless Chromium announces itself in the user agent; anything that wants to
+    pass for a person (a stealth attacker, or our simulated people) replaces it."""
+    major = browser.version.split(".")[0]
+    return (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{major}.0.0.0 Safari/537.36"
+    )
+
+
+async def _context(
+    browser: Any, base: str, ip: str, clock: Clock, rng: random.Random, *, mask_ua: bool = True
+) -> Any:
     w, h = rng.choice(VIEWPORTS)
+    extra = {"user_agent": _desktop_ua(browser)} if mask_ua else {}
     return await browser.new_context(
+        **extra,
         base_url=base,
         ignore_https_errors=True,  # self-signed lab certificate
         viewport={"width": w, "height": h},
@@ -79,7 +93,7 @@ async def script_session(browsers, base, rng, clock, truth, world, nivel, sessao
         return
     stealth = nivel == 2
     browser = browsers["stealth" if stealth else "plain"]
-    ctx = await _context(browser, base, attacker_ip(rng, nivel), clock, rng)
+    ctx = await _context(browser, base, attacker_ip(rng, nivel), clock, rng, mask_ua=stealth)
     try:
         page = await ctx.new_page()
         perfil = "navegador_furtivo" if stealth else "playwright_padrao"

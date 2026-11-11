@@ -44,6 +44,10 @@ services:
       GANDALF_REDIS_URL: redis://redis:6379/0
       GANDALF_DATABASE_URL: postgresql://gandalf:${POSTGRES_PASSWORD:-gandalf}@postgres:5432/gandalf
       GANDALF_IP_HMAC_KEY: ${GANDALF_IP_HMAC_KEY:-dev-only-change-me}
+      GANDALF_MODEL_DIR: /models
+      OMP_NUM_THREADS: "1"   # one row per request: threads only add overhead
+    volumes:
+      - ./models:/models:ro
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

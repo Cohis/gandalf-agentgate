@@ -7,16 +7,28 @@ path does not change.
 
 from __future__ import annotations
 
+import json
 import math
-from typing import Protocol
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol
 
-from gandalf_features import FeatureVector
+from gandalf_features import FEATURE_VERSION, FeatureVector
 
 Contributions = dict[str, float]
 
 
+@dataclass(frozen=True, slots=True)
+class Thresholds:
+    """Operating points chosen offline on the validation period."""
+
+    desafiar: float
+    negar: float
+
+
 class Scorer(Protocol):
     version: str
+    thresholds: Thresholds | None
 
     def score(self, f: FeatureVector) -> tuple[float, Contributions]: ...
 
@@ -30,6 +42,7 @@ class HeuristicScorer:
     """'Is this automation?' baseline. Also the yardstick the trained model must beat."""
 
     version = "heuristica-0"
+    thresholds: Thresholds | None = None  # uses the policy file's defaults
     _BIAS = -3.0
 
     def score(self, f: FeatureVector) -> tuple[float, Contributions]:
@@ -68,3 +81,53 @@ class HeuristicScorer:
             c["ev_ip_10m"] = 1.5
         logit = self._BIAS + sum(c.values())
         return 1.0 / (1.0 + math.exp(-logit)), c
+
+
+class ModelError(RuntimeError):
+    pass
+
+
+class LightGBMScorer:
+    """Gradient-boosted trees. Contributions come from LightGBM's built-in TreeSHAP
+    (``pred_contrib``), so a decision is explained by the model that made it."""
+
+    def __init__(self, model_dir: Path) -> None:
+        import lightgbm as lgb
+        import numpy as np
+
+        meta: dict[str, Any] = json.loads((model_dir / "meta.json").read_text(encoding="utf-8"))
+        if meta["versao_features"] != FEATURE_VERSION:
+            # A model must only ever see the feature set it was trained on.
+            raise ModelError(
+                f"model {meta['versao']} was trained on features {meta['versao_features']}, "
+                f"but this engine computes {FEATURE_VERSION}"
+            )
+        self._np = np
+        self._booster = lgb.Booster(model_file=str(model_dir / "model.txt"))
+        self._names: list[str] = meta["features"]
+        self._a, self._b = meta["calibracao"]["a"], meta["calibracao"]["b"]
+        self.version: str = meta["versao"]
+        lim = meta.get("limiares")
+        self.thresholds: Thresholds | None = (
+            Thresholds(float(lim["desafiar"]), float(lim["negar"])) if lim else None
+        )
+
+    def score(self, f: FeatureVector) -> tuple[float, Contributions]:
+        nan = float("nan")
+        row = self._np.array(
+            [[nan if (v := f.get(n)) is None else v for n in self._names]], dtype=self._np.float64
+        )
+        contrib = self._booster.predict(row, pred_contrib=True)[0]
+        raw = float(contrib.sum())  # last column is the expected value
+        prob = 1.0 / (1.0 + math.exp(-(self._a * raw + self._b)))  # Platt calibration
+        return prob, {n: float(c) for n, c in zip(self._names, contrib[:-1], strict=True)}
+
+
+def load_scorer(model_dir: Path | None) -> Scorer:
+    """The model named in ``<model_dir>/ACTIVE``, or the heuristic baseline if none."""
+    if model_dir is None:
+        return HeuristicScorer()
+    active = model_dir / "ACTIVE"
+    if not active.exists():
+        return HeuristicScorer()
+    return LightGBMScorer(model_dir / active.read_text(encoding="utf-8").strip())

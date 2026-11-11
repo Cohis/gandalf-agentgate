@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from .enrich import Enricher
 from .pipeline import Engine
 from .policy import Policy
 from .rules import load_rules
-from .scoring import HeuristicScorer
+from .scoring import ModelError, load_scorer
 from .storage import NullStorage, PostgresStorage, Storage
 
 
@@ -48,7 +49,7 @@ def create_app(
             storage=st,
             enricher=Enricher(),
             rules=load_rules(settings.rules_path),
-            scorer=HeuristicScorer(),
+            scorer=load_scorer(settings.model_dir),
             policy=Policy.load(settings.policy_path),
             ip_hmac_key=settings.ip_hmac_key,
         )
@@ -80,6 +81,17 @@ def create_app(
         if not await request.app.state.storage.resolve_challenge(desafio_id, body.estado):
             raise HTTPException(status_code=404, detail="desafio inexistente ou já resolvido")
         return {"desafio_id": desafio_id, "estado": body.estado}
+
+    @app.post("/admin/recarregar-modelo", dependencies=[Auth])
+    async def recarregar(request: Request) -> dict[str, str]:
+        """Hot reload: the new model is loaded off the event loop and swapped in with
+        one assignment, so requests in flight finish on the model they started with."""
+        try:
+            scorer = await asyncio.to_thread(load_scorer, settings.model_dir)
+        except (ModelError, OSError, KeyError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=f"modelo recusado: {exc}") from exc
+        request.app.state.engine.scorer = scorer
+        return {"versao_modelo": scorer.version}
 
     @app.get("/saude")
     async def saude(request: Request, response: Response) -> dict[str, object]:

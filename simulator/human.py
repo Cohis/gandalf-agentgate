@@ -117,6 +117,16 @@ class Human:
         await asyncio.sleep(self.rng.uniform(0.04, 0.13))
         await self.page.mouse.up()
 
+    async def _go(self, action: Any) -> None:
+        """Perform an action that loads a new page, and wait for *that* page.
+        (Waiting for the load state alone returns at once: the old page is loaded.)"""
+        try:
+            async with self.page.expect_navigation(wait_until="domcontentloaded", timeout=15_000):
+                await action
+        except Exception as exc:
+            if "Timeout" not in type(exc).__name__:
+                raise  # no navigation (e.g. the browser refused an invalid form) is fine
+
     async def focus(self, loc: Any) -> None:
         if self.p.keyboard_only:
             await loc.focus()
@@ -145,14 +155,12 @@ class Human:
 
     async def submit(self, form: str) -> None:
         if self.p.keyboard_only:
-            await self.page.keyboard.press("Enter")
+            await self._go(self.page.keyboard.press("Enter"))
         else:
-            await self.click(self.page.locator(f"{form} button[type=submit]"))
-        await self.page.wait_for_load_state("domcontentloaded")
+            await self._go(self.click(self.page.locator(f"{form} button[type=submit]")))
 
     async def nav(self, href: str) -> None:
-        await self.click(self.page.locator(f'nav a[href="{href}"]').first)
-        await self.page.wait_for_load_state("domcontentloaded")
+        await self._go(self.click(self.page.locator(f'nav a[href="{href}"]').first))
         await self.think()
 
     # ------------------------------------------------------------- behaviours
@@ -164,8 +172,7 @@ class Human:
                 links = self.page.locator('a[href^="/produto/"]')
                 n = await links.count()
                 if n:
-                    await self.click(links.nth(self.rng.randrange(n)))
-                    await self.page.wait_for_load_state("domcontentloaded")
+                    await self._go(self.click(links.nth(self.rng.randrange(n))))
                     await self.think(1.6)
                     await self.nav("/")
             else:
@@ -208,13 +215,14 @@ class Human:
     async def buy(self, *, coupon: bool) -> None:
         for _ in range(self.rng.choice((1, 1, 1, 2))):
             buttons = self.page.locator('form[action="/carrinho/adicionar"] button')
-            await self.click(buttons.nth(self.rng.randrange(await buttons.count())))
-            await self.page.wait_for_load_state("domcontentloaded")
+            if not await buttons.count():  # not on a page that sells anything
+                await self.page.goto("/")
+                await self.think()
+            await self._go(self.click(buttons.nth(self.rng.randrange(await buttons.count()))))
             await self.think()
             await self.nav("/")
         await self.nav("/carrinho")
-        await self.click(self.page.locator('a[href="/checkout"]').last)
-        await self.page.wait_for_load_state("domcontentloaded")
+        await self._go(self.click(self.page.locator('a[href="/checkout"]').last))
         await self.think()
         f = 'form[action="/checkout"]'
         if not await self.page.locator(f).count():

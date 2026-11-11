@@ -111,8 +111,8 @@ class Script:
         await self.pause()
 
     async def press(self, selector: str) -> None:
-        await self.page.locator(selector).first.click()  # dead centre, no pointer travel
-        await self.page.wait_for_load_state("domcontentloaded")
+        async with self.page.expect_navigation(wait_until="domcontentloaded", timeout=15_000):
+            await self.page.locator(selector).first.click()  # dead centre, no pointer travel
         await self.pause()
 
     async def signup(self) -> None:

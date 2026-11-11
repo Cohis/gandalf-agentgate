@@ -1,4 +1,6 @@
-.PHONY: help up down logs test lint e2e load load-burst telemetry dev psql clean
+.PHONY: simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
+
+RUN ?= coleta
 
 help:            ## list targets
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/'
@@ -32,6 +34,21 @@ load:            ## steady 200 req/s for 30 s; prints the engine's p50/p99
 load-burst:      ## worst case: 200 clients firing in the same instant, every second
 	uv run locust -f loadtest/locustfile.py --headless -H http://127.0.0.1:8000 \
 		-u 200 -r 200 -t 30s --only-summary
+
+simulate:        ## labelled lab traffic: people + attackers 1 and 2 (shop in shadow mode)
+	SHOP_SHADOW=1 docker compose up -d --wait shop proxy
+	uv run python -m simulator.run --humans 300 --l1 110 --l2 150 --days 6 --concurrency 12 --run $(RUN)
+
+labels:          ## deliver a run's answer key to the engine: make labels RUN=<name>
+	uv run python -m simulator.labels data/runs/$(RUN).jsonl
+
+train:           ## train + evaluate, write eval/out/fase2.md, activate and hot-reload
+	uv run python -m jobs.train --activate
+	$(MAKE) reload
+
+reload:          ## tell the running engine to load models/ACTIVE
+	curl -fsS -X POST -H "X-Gandalf-Key: $${GANDALF_SERVICE_KEY:-dev-only-change-me}" \
+		http://127.0.0.1:8000/admin/recarregar-modelo && echo
 
 telemetry:       ## build the page script for local development
 	npx --yes esbuild@0.25.0 services/shop/telemetry/telemetry.ts --bundle --minify \

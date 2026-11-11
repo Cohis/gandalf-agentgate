@@ -125,10 +125,10 @@ class Engine:
         score, contributions = scorer.score(features)
         lap("modelo")
 
-        decisao, acao = self._policy.decide(score, fired)
-        ator = self._policy.actor(score)
+        decisao, acao = self._policy.decide(score, fired, scorer.thresholds)
+        ator = self._policy.actor(score, scorer.thresholds)
         motivos = [r.motivo for r in fired]
-        if decisao is not Decisao.aprovar or score >= self._policy.limiar_automacao:
+        if decisao is not Decisao.aprovar:
             motivos += [m for m in reasons(features, contributions) if m not in motivos]
         if degraded:
             motivos.append("modo degradado: contadores de velocidade indisponíveis")
