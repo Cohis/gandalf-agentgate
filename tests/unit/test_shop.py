@@ -17,6 +17,7 @@ class FakeEngine:
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.labels: list[dict[str, Any]] = []
         self.decisao = "aprovar"
         self.down = False
 
@@ -24,6 +25,9 @@ class FakeEngine:
         if self.down:
             raise httpx.ConnectError("engine down")
         assert request.headers["x-gandalf-key"] == "k"
+        if request.url.path == "/rotulos":
+            self.labels += json.loads(request.content)["rotulos"]
+            return httpx.Response(200, json={"recebidos": 1})
         self.calls.append(json.loads(request.content))
         return httpx.Response(
             200,
@@ -200,3 +204,76 @@ def test_shadow_mode_records_the_verdict_but_never_blocks(engine: FakeEngine) ->
     r = signup(c)
     assert r.status_code == 303 and r.headers["x-lab-decisao"] == "negar"
     assert "a@example.com" in c.app.state.accounts  # type: ignore[attr-defined]
+
+
+# ------------------------------------------------------------ recording real people
+
+
+def start(c: TestClient, codigo: str = "p1", **extra: str) -> httpx.Response:
+    return c.post("/gravar", data={"codigo": codigo, "aceito": "sim"} | extra)
+
+
+def test_recording_is_off_unless_enabled(engine: FakeEngine) -> None:
+    c = make(engine)
+    assert c.get("/gravar").status_code == 404
+    assert start(c).status_code == 404
+
+
+def test_recording_needs_consent_and_a_sane_code(engine: FakeEngine) -> None:
+    c = make(engine, recording=True)
+    assert c.get("/gravar").status_code == 200
+    assert c.post("/gravar", data={"codigo": "P1"}).status_code == 400  # no consent
+    assert start(c, codigo="p 1!").status_code == 400
+    assert not c.app.state.participants  # type: ignore[attr-defined]
+
+
+def test_recorded_session_is_labelled_human_and_never_blocked(engine: FakeEngine) -> None:
+    engine.decisao = "negar"
+    c = make(engine, recording=True)
+    assert start(c).headers["location"] == "/gravar/tarefas"
+    assert "Sessão 1" in c.get("/gravar/tarefas").text
+    assert "Gravando" in c.get("/").text
+    assert signup(c).status_code == 303  # the engine said 'negar'; a volunteer still gets in
+    assert engine.labels == [
+        {
+            "avaliacao_id": "av_1",
+            "eh_automacao": False,
+            "eh_fraude": False,
+            "ator_real": "humano",
+            "nivel_atacante": 0,
+            "perfil": "real_P1",
+            "fonte": "gravacao:humano_real",
+        }
+    ]
+    # the instructions page is not part of the visit
+    assert engine.calls[0]["sessao"]["paginas_vistas"] == 1
+
+
+def test_each_participant_gets_their_own_device_and_address(engine: FakeEngine) -> None:
+    c = make(engine, recording=True)
+    seen = {}
+    for codigo, email in (
+        ("P1", "a@example.com"),
+        ("P2", "b@example.com"),
+        ("P1", "c@example.com"),
+    ):
+        start(c, codigo=codigo)
+        signup(c, email=email)
+        call = engine.calls[-1]
+        seen.setdefault(codigo, []).append((call["dispositivo_id"], call["ip"], call["sessao_id"]))
+    (d1, ip1, s1), (d1b, ip1b, s1b) = seen["P1"]
+    d2, ip2, _ = seen["P2"][0]
+    assert (d1, ip1) == (d1b, ip1b) and s1 != s1b  # same person: same device, new session
+    assert d1 != d2 and ip1 != ip2  # different people do not share a device
+    assert c.app.state.participants["P1"]["sessoes"] == 2  # type: ignore[attr-defined]
+
+
+def test_ending_a_session_starts_the_next_and_finishing_stops_recording(engine: FakeEngine) -> None:
+    c = make(engine, recording=True)
+    start(c)
+    assert c.post("/gravar/encerrar").headers["location"] == "/gravar/tarefas"
+    assert "Sessão 2" in c.get("/gravar/tarefas").text
+    done = c.post("/gravar/encerrar", data={"fim": "sim"})
+    assert "Obrigado" in done.text and "Gravando" not in done.text
+    signup(c)
+    assert len(engine.labels) == 0  # after finishing, nothing is recorded as a volunteer

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titulo %}Sua tarefa · Loja da Montanha{% endblock %}
+{% block conteudo %}
+{# A new recorded session must not inherit the previous one's rhythm. Runs before the
+   deferred telemetry script reads its carried state. #}
+<script>try { sessionStorage.removeItem("gandalf_t"); } catch (e) {}</script>
+<h1>Sessão {{ gravacao.n }}</h1>
+<p>Use a loja como usaria qualquer loja online, <strong>do seu jeito e sem pressa</strong>.
+Não existe jeito certo. Sugestão para esta sessão:</p>
+{% set tarefa = (gravacao.n - 1) % 6 %}
+<div class="cartao">
+{% if tarefa == 0 %}
+  <p><strong>Crie uma conta</strong> (dados inventados) e <strong>compre alguma coisa</strong> que achar
+  interessante, usando o cupom <strong>PRIMEIRA10</strong>.</p>
+{% elif tarefa == 1 %}
+  <p><strong>Entre na conta</strong> que você criou, dê uma olhada nos produtos e
+  <strong>compre um presente</strong> para alguém.</p>
+{% elif tarefa == 2 %}
+  <p><strong>Entre na sua conta</strong> e só passeie: veja alguns produtos, a página Sobre,
+  coloque algo no carrinho. <strong>Não precisa comprar.</strong></p>
+{% elif tarefa == 3 %}
+  <p><strong>Crie outra conta</strong> (outro e-mail inventado), como se fosse para um familiar,
+  e compre o item mais barato da loja.</p>
+{% elif tarefa == 4 %}
+  <p><strong>Entre em qualquer uma das suas contas</strong> e compre dois produtos diferentes
+  no mesmo pedido.</p>
+{% else %}
+  <p><strong>Faça o que quiser</strong> na loja por um ou dois minutos.</p>
+{% endif %}
+</div>
+<p>Na hora de pagar, use este <strong>cartão de teste</strong>: <code>4242 4242 4242 4242</code></p>
+<p>Quando terminar, clique em <strong>Encerrar esta sessão</strong>, na faixa amarela no topo.</p>
+<p><a href="/"><strong>Ir para a loja</strong></a></p>
+<hr>
+<form method="post" action="/gravar/encerrar">
+  <input type="hidden" name="fim" value="sim">
+  <button class="link" type="submit">Já fiz todas as minhas sessões, quero terminar</button>
+</form>
+{% endblock %}

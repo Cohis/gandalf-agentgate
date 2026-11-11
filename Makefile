@@ -1,4 +1,4 @@
-.PHONY: simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
+.PHONY: record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
 
 RUN ?= coleta
 
@@ -32,7 +32,7 @@ load:            ## steady 200 req/s for 30 s; prints the engine's p50/p99
 	uv run python loadtest/open_loop.py --rps 200 --seconds 30
 
 load-burst:      ## worst case: 200 clients firing in the same instant, every second
-	uv run locust -f loadtest/locustfile.py --headless -H http://127.0.0.1:8000 \
+	uv run locust -f loadtest/locustfile.py --headless -H http://127.0.0.1:8010 \
 		-u 200 -r 200 -t 30s --only-summary
 
 simulate:        ## labelled lab traffic: people + attackers 1 and 2 (shop in shadow mode)
@@ -48,7 +48,18 @@ train:           ## train + evaluate, write eval/out/fase2.md, activate and hot-
 
 reload:          ## tell the running engine to load models/ACTIVE
 	curl -fsS -X POST -H "X-Gandalf-Key: $${GANDALF_SERVICE_KEY:-dev-only-change-me}" \
-		http://127.0.0.1:8000/admin/recarregar-modelo && echo
+		http://127.0.0.1:8010/admin/recarregar-modelo && echo
+
+record:          ## open the lab for recording real people at https://localhost:8443/gravar
+	SHOP_RECORDING=1 docker compose up -d --build --wait
+	@echo "Abra https://localhost:8443/gravar em uma janela anônima"
+
+record-status:   ## how many recorded sessions and events each participant has
+	@docker compose exec -T postgres psql -U gandalf gandalf -c "SELECT l.perfil AS participante, \
+		count(DISTINCT e.sessao_id) AS sessoes, count(*) AS eventos, \
+		count(*) FILTER (WHERE d.decisao <> 'aprovar') AS seriam_barrados \
+		FROM labels l JOIN events e USING (avaliacao_id) JOIN decisions d USING (avaliacao_id) \
+		WHERE l.fonte = 'gravacao:humano_real' GROUP BY 1 ORDER BY 1"
 
 telemetry:       ## build the page script for local development
 	npx --yes esbuild@0.25.0 services/shop/telemetry/telemetry.ts --bundle --minify \

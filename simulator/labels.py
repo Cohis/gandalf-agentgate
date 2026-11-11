@@ -14,7 +14,7 @@ import httpx
 
 from .common import guard
 
-ENGINE_URL = os.environ.get("LAB_ENGINE_URL", "http://127.0.0.1:8000")
+ENGINE_URL = os.environ.get("LAB_ENGINE_URL", "http://127.0.0.1:8010")
 KEY = os.environ.get("GANDALF_SERVICE_KEY", "dev-only-change-me")
 
 

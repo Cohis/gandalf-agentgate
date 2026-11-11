@@ -50,7 +50,7 @@ def pct(xs: list[float], p: float) -> float:
 
 async def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="http://127.0.0.1:8000")
+    ap.add_argument("--host", default="http://127.0.0.1:8010")
     ap.add_argument("--rps", type=int, default=50)
     ap.add_argument("--seconds", type=int, default=30)
     a = ap.parse_args()

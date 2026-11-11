@@ -26,6 +26,8 @@
     /* Honeypot and canary: out of sight for sighted users. Assistive technology may
        still expose them, which is why they are model signals and never a block. */
     .fora-da-tela { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+    .gravando { max-width:920px; margin:0 auto; padding:8px 16px; background:#fff4d6; border-bottom:1px solid #e3c770; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; font-size:.92rem; }
+    .gravando button { background:#7a5a00; padding:6px 12px; }
     footer { border-top:1px solid var(--line); margin-top:32px; }
   </style>
 </head>
@@ -45,6 +47,12 @@
     {% endif %}
   </nav>
 </header>
+{% if gravacao %}
+<div class="gravando" role="status">
+  <span>● Gravando · participante <strong>{{ gravacao.codigo }}</strong> · sessão {{ gravacao.n }}</span>
+  <form method="post" action="/gravar/encerrar"><button type="submit">Encerrar esta sessão</button></form>
+</div>
+{% endif %}
 <main>
 {% block conteudo %}{% endblock %}
 </main>

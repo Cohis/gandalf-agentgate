@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Participar da pesquisa · Loja da Montanha{% endblock %}
+{% block conteudo %}
+<h1>Participar da pesquisa</h1>
+<p>Esta é uma <strong>loja de mentira</strong>, parte de um projeto de estudo sobre como diferenciar
+pessoas de robôs em sites. Nada é vendido e nenhum pagamento acontece.</p>
+
+<h2>O que é registrado</h2>
+<ul>
+  <li>O <strong>ritmo</strong> do seu uso: intervalos entre cliques, o quanto o caminho do mouse é reto,
+      se você digitou ou colou. Só números resumidos.</li>
+  <li>Quais páginas da loja você visitou e em que ordem.</li>
+  <li>O código de participante que você escolher abaixo (por exemplo, P1).</li>
+</ul>
+
+<h2>O que não é registrado</h2>
+<ul>
+  <li>As teclas que você aperta e o trajeto do mouse ponto a ponto.</li>
+  <li>Seu nome verdadeiro, e-mail verdadeiro ou qualquer dado seu. <strong>Invente tudo</strong>:
+      nome, e-mail, senha e endereço fictícios. Não use uma senha que você usa em outro lugar.</li>
+  <li>Qualquer coisa fora desta loja.</li>
+</ul>
+
+<p>Você pode parar quando quiser: basta fechar a janela. Para apagar o que foi registrado,
+informe o seu código a quem lhe emprestou o computador.</p>
+
+{% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+<form class="pilha" method="post" action="/gravar">
+  <label>Seu código de participante (o mesmo sempre que voltar)
+    <input type="text" name="codigo" placeholder="P1" maxlength="8" required autocomplete="off"></label>
+  <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
+    <input type="checkbox" name="aceito" value="sim" required style="width:auto;">
+    Li o texto acima e concordo em participar.</label>
+  <button type="submit">Começar</button>
+</form>
+{% endblock %}

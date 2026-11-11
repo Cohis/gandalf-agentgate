@@ -59,6 +59,8 @@ class Settings:
     # Shadow mode: ask the engine and record its verdict, but never block. This is how
     # training data is collected: blocking would censor everything an attacker does next.
     shadow: bool = False
+    # Recording mode: real people, with consent, produce labelled human sessions.
+    recording: bool = False
     engine_timeout_s: float = 0.5
 
     @classmethod
@@ -73,6 +75,7 @@ class Settings:
             lab_mode=e.get("SHOP_LAB_MODE", "0") == "1",
             fail_open=e.get("SHOP_FAIL_OPEN", "1") == "1",
             shadow=e.get("SHOP_SHADOW", "0") == "1",
+            recording=e.get("SHOP_RECORDING", "0") == "1",
         )
 
 
@@ -82,6 +85,9 @@ class Session:
     pages: list[str] = field(default_factory=list)
     conta_id: str | None = None
     cart: dict[str, int] = field(default_factory=dict)
+    rec: str | None = None  # participant code when this is a recorded human session
+    rec_ip: str | None = None
+    rec_n: int = 0
 
 
 @dataclass(slots=True)
@@ -192,10 +198,14 @@ def create_app(
         request.state.did = did if ok else "d_" + secrets.token_hex(12)
         return str(request.state.did)
 
-    def render(request: Request, name: str, status: int = 200, **ctx: Any) -> Response:
+    def render(
+        request: Request, name: str, status: int = 200, *, track: bool = True, **ctx: Any
+    ) -> Response:
         sess = session_of(request)[1]
-        if request.method == "GET":
+        if track and request.method == "GET":
             sess.pages.append(request.url.path)
+        if sess.rec:
+            ctx.setdefault("gravacao", {"codigo": sess.rec, "n": sess.rec_n})
         account = next((a for a in accounts.values() if a.id == sess.conta_id), None)
         resp = tpl.TemplateResponse(
             request,
@@ -233,7 +243,7 @@ def create_app(
                 "conta_id": sess.conta_id,
                 "dispositivo_id": device_of(request),
                 "sessao_id": sid,
-                "ip": client_ip(request, s),
+                "ip": sess.rec_ip or client_ip(request, s),
                 "user_agent": request.headers.get("user-agent", "")[:1024],
                 # Fingerprints are only meaningful when our proxy computed them.
                 "ja4": request.headers.get("x-ja4-fingerprint") if s.behind_proxy else None,
@@ -259,6 +269,8 @@ def create_app(
             r.raise_for_status()
             verdict = AssessResponse.model_validate_json(r.content)
             request.state.lab_verdict = verdict
+            if sess.rec:
+                await label_recorded(verdict.avaliacao_id, sess.rec)
             return verdict
         except (httpx.HTTPError, ValidationError):
             log.exception("engine unavailable for %s", evento)
@@ -266,11 +278,32 @@ def create_app(
                 return None
             raise
 
+    async def label_recorded(avaliacao_id: str, codigo: str) -> None:
+        """A recorded session is known to be a person: tell the engine right away."""
+        label = {
+            "avaliacao_id": avaliacao_id,
+            "eh_automacao": False,
+            "eh_fraude": False,
+            "ator_real": "humano",
+            "nivel_atacante": 0,
+            "perfil": f"real_{codigo}",
+            "fonte": "gravacao:humano_real",
+        }
+        try:
+            r = await client.post(
+                "/rotulos", json={"rotulos": [label]}, headers={"X-Gandalf-Key": s.service_key}
+            )
+            r.raise_for_status()
+        except httpx.HTTPError:
+            log.exception("could not deliver the label for %s", avaliacao_id)
+
     def gate(request: Request, verdict: AssessResponse | None) -> Response | None:
         """None means 'go ahead'. Reasons are never shown to the visitor: they would
         teach an attacker what to change."""
         if s.shadow or verdict is None or verdict.decisao is Decisao.aprovar:
             return None
+        if session_of(request)[1].rec:
+            return None  # a volunteer is never blocked: the verdict is only recorded
         if verdict.decisao is Decisao.desafiar:
             return render(request, "desafio.html", status=401, desafio_id=verdict.desafio_id)
         return render(request, "negado.html", status=403)
@@ -427,6 +460,91 @@ def create_app(
         acct.orders += 1
         sess.cart.clear()
         return render(request, "pedido.html", total=total, cupom_aplicado=first_purchase)
+
+    # ------------------------------------------------- recording real people
+
+    participants: dict[str, dict[str, Any]] = {}
+    app.state.participants = participants
+
+    def start_recorded_session(request: Request, codigo: str) -> None:
+        """A fresh session for the participant. Each participant gets a device and an
+        address of their own, so five friends on one notebook do not look like five
+        accounts on one device."""
+        me = participants.setdefault(
+            codigo,
+            {
+                "did": "d_" + secrets.token_hex(12),
+                "ip": f"187.{secrets.randbelow(256)}.{secrets.randbelow(256)}."
+                f"{secrets.randbelow(253) + 1}",
+                "sessoes": 0,
+            },
+        )
+        me["sessoes"] += 1
+        sid = "s_" + secrets.token_hex(12)
+        sessions[sid] = Session(
+            started=time.monotonic(), rec=codigo, rec_ip=me["ip"], rec_n=me["sessoes"]
+        )
+        request.state.sid, request.state.did = sid, me["did"]
+
+    def recording_off(request: Request) -> Response | None:
+        if not s.recording:
+            return render(request, "negado.html", status=404, track=False, titulo="Não encontrado")
+        return None
+
+    @app.get("/gravar", response_class=HTMLResponse)
+    async def record_consent(request: Request) -> Response:
+        return recording_off(request) or render(request, "gravar.html", track=False)
+
+    @app.post("/gravar", response_class=HTMLResponse)
+    async def record_start(
+        request: Request,
+        codigo: Annotated[str, Form(max_length=8)],
+        aceito: Annotated[str, Form(max_length=3)] = "",
+    ) -> Response:
+        if off := recording_off(request):
+            return off
+        codigo = codigo.strip().upper()
+        if not (2 <= len(codigo) <= 8 and codigo.isalnum() and codigo.isascii()):
+            return render(
+                request, "gravar.html", status=400, track=False,
+                erro="O código deve ter de 2 a 8 letras ou números, sem espaços.",
+            )  # fmt: skip
+        if aceito != "sim":
+            return render(
+                request, "gravar.html", status=400, track=False,
+                erro="Sem o seu consentimento a sessão não é gravada.",
+            )  # fmt: skip
+        start_recorded_session(request, codigo)
+        return RedirectResponse("/gravar/tarefas", status_code=303)
+
+    @app.get("/gravar/tarefas", response_class=HTMLResponse)
+    async def record_tasks(request: Request) -> Response:
+        if off := recording_off(request):
+            return off
+        sess = session_of(request)[1]
+        if not sess.rec:
+            return RedirectResponse("/gravar", status_code=303)
+        sess.started = time.monotonic()  # reading the instructions is not part of the visit
+        return render(request, "tarefas.html", track=False)
+
+    @app.post("/gravar/encerrar", response_class=HTMLResponse)
+    async def record_next(
+        request: Request, fim: Annotated[str, Form(max_length=3)] = ""
+    ) -> Response:
+        if off := recording_off(request):
+            return off
+        codigo = session_of(request)[1].rec
+        if not codigo:
+            return RedirectResponse("/gravar", status_code=303)
+        if fim == "sim":
+            total = participants[codigo]["sessoes"]
+            # leave an ordinary, unrecorded session and a new device behind
+            sid = "s_" + secrets.token_hex(12)
+            sessions[sid] = Session(started=time.monotonic())
+            request.state.sid, request.state.did = sid, "d_" + secrets.token_hex(12)
+            return render(request, "gravar_fim.html", track=False, total=total, gravacao=None)
+        start_recorded_session(request, codigo)
+        return RedirectResponse("/gravar/tarefas", status_code=303)
 
     @app.get("/saude")
     async def health() -> dict[str, bool]:
