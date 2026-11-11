@@ -25,7 +25,7 @@ Work in progress, built in phases. This table states what actually exists today.
 | Phase | Deliverable | Status |
 |---|---|---|
 | 1 | Skeleton: contracts, rule-based engine, shop, telemetry, dashboard, compose | **done and validated** |
-| 2 | Attackers 1 and 2, simulator, first LightGBM model, SHAP | to do |
+| 2 | Attackers 1 and 2, simulator, first LightGBM model, SHAP | **done** ([results, in Portuguese](docs/results/fase2.md)) |
 | 3 | Real AI agent (local LLM), recorded human sessions | to do |
 | 4 | Scale layer: embeddings, FAISS, HDBSCAN | to do |
 | 5 | Signed legitimate agent (Web Bot Auth) and passkey | to do |
@@ -33,7 +33,29 @@ Work in progress, built in phases. This table states what actually exists today.
 | 7 | Final table, ablation, load test | to do |
 | 8 | Module B: IEEE-CIS Fraud Detection | to do |
 
-In phase 1 the score comes from a **hand-written heuristic** (`heuristica-0`), not a trained model. It exists so the pipeline works end to end and as the baseline the model will have to beat. There are no detection numbers to show yet.
+### Phase 2 result, and why it is worth little
+
+Test period (most recent), 121 sessions, threshold chosen on validation for 1% false positives:
+
+| Group | Sessions | LightGBM model | Hand-written heuristic |
+|---|---|---|---|
+| Attacker level 1 (HTTP script, stock Playwright) | 18 | 100% detected | 100% |
+| Attacker level 2 (stealth browser, scripted behaviour) | 32 | 100% detected | 51% |
+| Simulated humans (false positives) | 71 | 0% | 2.5% |
+
+Read this before being impressed:
+
+- **Level 2 is easy by construction.** It hides its environment but never moves the mouse and clicks the exact centre of everything. That is what the model learned: 86% of its gain comes from `cursor_linear` and `cliques_centro`. An attacker replaying mouse paths breaks this result. That attacker is level 4.
+- **The model does not generalise.** Trained with no level 2 examples and tested only on level 2, it detects **0%**.
+- **Small sample.** Screen-reader users, who also use no mouse and are the likeliest false positive, appear in only 4 test sessions.
+- **Humans are simulated.** Real mouse paths, modelled rhythm and typing. See [docs/limitations.md](docs/limitations.md) (Portuguese).
+
+Two traps the project caught on the way, worth more than the table:
+
+1. **The first model learned an instrumentation bug.** 87% of its gain sat on two rhythm features: clicking a field counted as two actions 60 ms apart, for mouse users only, so the model flagged screen-reader users. Telemetry was fixed and the data collected again.
+2. **The second model learned the simulator's settings.** 73% of the gain moved to the mean gap between actions: my attackers were simply faster than my people. The five absolute-pace features were removed from the model; the ablation is in the report.
+
+The model adds about 0.5 ms per request and is swapped without restarting the engine (5 reloads during 200 req/s, no request lost).
 
 ### Phase 1 measurements
 

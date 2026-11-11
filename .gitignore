@@ -11,6 +11,5 @@ services/shop/src/gandalf_shop/static/telemetry.js
 # downloaded data sets, IP lists and recorded sessions never go to git
 data/*
 !data/.gitkeep
-models/*
-!models/.gitkeep
+# trained models are small text files; the active one ships so `docker compose up` serves a real model
 eval/out/

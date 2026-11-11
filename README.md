@@ -25,7 +25,7 @@ Em construção, por fases. Esta tabela diz o que existe de verdade hoje.
 | Fase | Entrega | Estado |
 |---|---|---|
 | 1 | Esqueleto: contratos, motor com regras, loja, telemetria, painel, compose | **pronta e validada** |
-| 2 | Atacantes 1 e 2, simulador, primeiro modelo LightGBM, SHAP | a fazer |
+| 2 | Atacantes 1 e 2, simulador, primeiro modelo LightGBM, SHAP | **pronta** ([resultado](docs/results/fase2.md)) |
 | 3 | Agente de IA real (LLM local), sessões humanas gravadas | a fazer |
 | 4 | Camada de escala: embeddings, FAISS, HDBSCAN | a fazer |
 | 5 | Agente legítimo assinado (Web Bot Auth) e passkey | a fazer |
@@ -33,7 +33,29 @@ Em construção, por fases. Esta tabela diz o que existe de verdade hoje.
 | 7 | Tabela final, ablação, teste de carga | a fazer |
 | 8 | Módulo B: IEEE-CIS Fraud Detection | a fazer |
 
-Na fase 1 o score vem de uma **heurística escrita à mão** (`heuristica-0`), não de um modelo treinado. Ela existe para o pipeline funcionar de ponta a ponta e para servir de linha de base que o modelo terá de superar. Ainda não há nenhum número de detecção para mostrar.
+### Resultado da fase 2, e por que ele vale pouco
+
+Período de teste (o mais recente), 121 sessões, limiar escolhido na validação para 1% de falso positivo:
+
+| Grupo | Sessões | Modelo LightGBM | Heurística à mão |
+|---|---|---|---|
+| Atacante nível 1 (script HTTP, Playwright padrão) | 18 | 100% detectado | 100% |
+| Atacante nível 2 (navegador furtivo, comportamento de script) | 32 | 100% detectado | 51% |
+| Humanos simulados (falso positivo) | 71 | 0% | 2,5% |
+
+Leia isto antes de se impressionar:
+
+- **O nível 2 é fácil por definição.** Ele esconde o ambiente (sem `webdriver`, user-agent normal), mas não move o mouse e clica no centro exato de tudo. O modelo aprendeu exatamente isso: 86% do ganho vem de `cursor_linear` e `cliques_centro`. Um atacante que reproduza trajetórias de mouse derruba esse resultado. Esse atacante é o nível 4.
+- **O modelo não generaliza.** Treinado sem nenhum exemplo do nível 2 e testado só nele, detecta **0%**. Um classificador supervisionado reconhece as famílias que viu.
+- **Amostra pequena.** O perfil leitor de tela, que também não usa mouse e é o falso positivo mais provável, aparece em só 4 sessões do teste.
+- **Os humanos são simulados.** Trajetórias de mouse reais, ritmo e digitação modelados. Detalhes em [docs/limitations.md](docs/limitations.md).
+
+Duas armadilhas que o próprio projeto pegou no caminho, e que valem mais que a tabela:
+
+1. **O primeiro modelo aprendeu um defeito de instrumentação.** 87% do ganho vinha de duas features de ritmo. A causa: clicar num campo contava duas ações com 60 ms entre elas, só para quem usa mouse. O modelo sinalizava usuários de leitor de tela. A telemetria foi corrigida e a coleta refeita.
+2. **O segundo modelo aprendeu os parâmetros do simulador.** 73% do ganho passou para a média dos intervalos: meus atacantes eram simplesmente mais rápidos que minhas pessoas. As cinco features de velocidade absoluta foram tiradas do modelo; a ablação está no [relatório](docs/results/fase2.md).
+
+O modelo acrescenta cerca de 0,5 ms por requisição e é trocado sem reiniciar o motor (5 recargas durante 200 req/s, nenhuma requisição perdida).
 
 ### Medições da fase 1
 
@@ -67,6 +89,9 @@ Testes (não precisam de Docker):
 ```bash
 make test       # unidade, contrato e paridade online/offline
 make e2e        # ponta a ponta, com o compose no ar
+make simulate RUN=coleta   # tráfego rotulado (cerca de 1h15)
+make labels RUN=coleta     # entrega o gabarito ao motor
+make train                 # treina, avalia e ativa o modelo
 make load       # 200 req/s constantes por 30 s no motor
 make load-burst # pior caso: 200 clientes disparando no mesmo instante
 ```

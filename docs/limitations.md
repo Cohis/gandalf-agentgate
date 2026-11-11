@@ -41,3 +41,11 @@ O período de teste tem poucas dezenas de sessões por grupo. Os intervalos de c
 ## Modo sombra
 
 Os dados de treino foram coletados com a loja em modo sombra: o motor é consultado, mas ninguém é barrado. Sem isso, um atacante bloqueado no cadastro nunca chegaria ao pagamento e essa parte do comportamento faltaria nos dados. A consequência é que as contagens de velocidade refletem um atacante que nunca foi interrompido.
+
+## Replay offline e minimização de dados
+
+O banco não guarda o IP cru nem o user-agent completo, por decisão de privacidade. A consequência é que os eventos gravados não bastam para recalcular todas as features do zero: o replay offline só reconstrói o que depende de conta, dispositivo, cartão e do hash do IP. A garantia de paridade entre online e offline é verificada em `tests/parity`, com as requisições originais em memória, e o treino usa sempre os vetores que o motor gravou.
+
+## Medições de latência
+
+As medições com o modelo no caminho foram feitas com o notebook em perfil de economia de energia e com outras aplicações em uso, e não são comparáveis com as da fase 1. Nas mesmas condições, com e sem modelo, a diferença foi de cerca de 0,5 ms na mediana.

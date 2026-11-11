@@ -49,6 +49,24 @@ PARAMS = {
 }
 
 
+# Features that measure how fast a session is in absolute terms. In this lab they
+# separate the classes perfectly, but only because my scripted attackers are faster
+# than my simulated people: the model would be learning the simulator's settings. A
+# real attacker slows down with one line of code, and a real AI agent is slower than
+# a person. They are still computed and logged, just not given to the model.
+ABSOLUTE_PACE = frozenset(
+    {
+        "ritmo_media_ms",
+        "ritmo_min_ms",
+        "ritmo_frac_rapidos",
+        "sessao_segundos",
+        "sessao_seg_por_pagina",
+    }
+)
+ALL_FEATURES = list(FEATURE_NAMES)
+MODEL_FEATURES = [n for n in FEATURE_NAMES if n not in ABSOLUTE_PACE]
+
+
 def load() -> pl.DataFrame:
     sql = """
         SELECT e.avaliacao_id, e.sessao_id, e.momento, e.evento, f.features,
@@ -90,8 +108,8 @@ def temporal_split(df: pl.DataFrame) -> pl.DataFrame:
     return df.join(first.select("sessao_id", "conjunto"), on="sessao_id")
 
 
-def xy(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    return df.select(FEATURE_NAMES).to_numpy(), df["y"].to_numpy().astype(int)
+def xy(df: pl.DataFrame, feats: list[str] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    return df.select(feats or MODEL_FEATURES).to_numpy(), df["y"].to_numpy().astype(int)
 
 
 @dataclass
@@ -105,13 +123,14 @@ class Model:
         return 1.0 / (1.0 + np.exp(-(self.a * raw + self.b)))
 
 
-def fit(train: pl.DataFrame, valid: pl.DataFrame) -> Model:
-    xt, yt = xy(train)
-    xv, yv = xy(valid)
+def fit(train: pl.DataFrame, valid: pl.DataFrame, feats: list[str] | None = None) -> Model:
+    feats = feats or MODEL_FEATURES
+    xt, yt = xy(train, feats)
+    xv, yv = xy(valid, feats)
     params = PARAMS | {"scale_pos_weight": float((yt == 0).sum()) / max(int((yt == 1).sum()), 1)}
     booster = lgb.train(
         params,
-        lgb.Dataset(xt, yt, feature_name=list(FEATURE_NAMES)),
+        lgb.Dataset(xt, yt, feature_name=feats),
         num_boost_round=500,
         valid_sets=[lgb.Dataset(xv, yv)],
         feval=lambda p, d: ("pr_auc", average_precision_score(d.get_label(), p), True),
@@ -208,6 +227,19 @@ def main() -> None:
     negar = float(min(max(np.nextafter(sv[yv == 0].max(), 1.0), desafiar, 0.99), 1.0))
 
     xt, _ = xy(test)
+
+    # Ablation: the same model, also given the absolute-pace features.
+    full = fit(train, valid, ALL_FEATURES)
+    full_valid = full.predict(xy(valid, ALL_FEATURES)[0])
+    full_thr = threshold_at_fpr(full_valid[yv == 0], TARGET_FPR)
+    full_test = full.predict(xy(test, ALL_FEATURES)[0])
+    full_gain = sorted(
+        zip(ALL_FEATURES, full.booster.feature_importance("gain"), strict=True),
+        key=lambda kv: -kv[1],
+    )
+    pace_share = sum(g for n, g in full_gain if n in ABSOLUTE_PACE) / (
+        sum(g for _, g in full_gain) or 1.0
+    )
     st = model.predict(xt)
 
     # Generalisation to an attacker family never seen in training.
@@ -237,7 +269,7 @@ def main() -> None:
         "versao": versao,
         "alvo": "automacao",
         "versao_features": FEATURE_VERSION,
-        "features": list(FEATURE_NAMES),
+        "features": MODEL_FEATURES,
         "calibracao": {"a": model.a, "b": model.b},
         "limiares": {"desafiar": desafiar, "negar": negar},
         "arvores": model.booster.best_iteration,
@@ -248,7 +280,7 @@ def main() -> None:
     )
 
     gain = sorted(
-        zip(FEATURE_NAMES, model.booster.feature_importance("gain"), strict=True),
+        zip(MODEL_FEATURES, model.booster.feature_importance("gain"), strict=True),
         key=lambda kv: -kv[1],
     )
     total_gain = sum(g for _, g in gain) or 1.0
@@ -281,7 +313,7 @@ def main() -> None:
         "",
         "## Resultado no período de teste (o mais recente)",
         "",
-        *evaluate("Modelo LightGBM", test, st, desafiar, rng),
+        *evaluate("Modelo LightGBM (sem features de ritmo absoluto)", test, st, desafiar, rng),
     ]
     base = test.filter(pl.col("versao_online") == "heuristica-0")
     if base.height == test.height:
@@ -295,6 +327,16 @@ def main() -> None:
             rng,
         )
     lines += [
+        "## Ablação: e se o modelo visse a velocidade absoluta?",
+        "",
+        f"Com as {len(ABSOLUTE_PACE)} features de ritmo absoluto (média e mínimo dos intervalos, "
+        "tempo de sessão), elas respondem por "
+        f"**{pace_share:.0%} do ganho** e a separação fica quase perfeita. Esse resultado "
+        "**não é usado**: ele mede que os atacantes do laboratório são mais rápidos que as "
+        "pessoas simuladas, o que é uma escolha minha de parâmetros, não uma propriedade de "
+        "atacantes. O modelo em produção não recebe essas features.",
+        "",
+        *evaluate("Com ritmo absoluto (descartado)", test, full_test, full_thr, rng),
         "## Generalização",
         "",
         f"Treinando **sem nenhum exemplo do nível 2** e testando só no nível 2: detecção de "
