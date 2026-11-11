@@ -21,11 +21,22 @@ pessoas de robôs em sites. Nada é vendido e nenhum pagamento acontece.</p>
   <li>Qualquer coisa fora desta loja.</li>
 </ul>
 
+{% if tunel %}
+<h2>Sobre o acesso pela internet</h2>
+<p>Esta loja roda no computador de quem lhe mandou o link. O acesso passa por um serviço de túnel
+(ngrok), que, como qualquer site, enxerga o seu endereço IP. O projeto <strong>não guarda</strong> o
+seu IP: cada participante é registrado com um endereço fictício.</p>
+{% endif %}
+
 <p>Você pode parar quando quiser: basta fechar a janela. Para apagar o que foi registrado,
-informe o seu código a quem lhe emprestou o computador.</p>
+informe o seu código a quem lhe convidou.</p>
 
 {% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
 <form class="pilha" method="post" action="/gravar">
+  {% if pede_convite %}
+  <label>Convite (veio no link que você recebeu)
+    <input type="text" name="convite" value="{{ convite or '' }}" maxlength="32" required autocomplete="off"></label>
+  {% endif %}
   <label>Seu código de participante (o mesmo sempre que voltar)
     <input type="text" name="codigo" placeholder="P1" maxlength="8" required autocomplete="off"></label>
   <label style="display:flex; gap:8px; align-items:center; font-weight:400;">

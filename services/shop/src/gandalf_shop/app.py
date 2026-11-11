@@ -9,6 +9,7 @@ browser never talks to the engine.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -61,6 +62,10 @@ class Settings:
     shadow: bool = False
     # Recording mode: real people, with consent, produce labelled human sessions.
     recording: bool = False
+    # Public recording through a tunnel: the whole shop sits behind an invite code,
+    # and the TLS fingerprints are dropped (they would be the tunnel's, not the visitor's).
+    invite_code: str = ""
+    tunnel: bool = False
     engine_timeout_s: float = 0.5
 
     @classmethod
@@ -76,6 +81,8 @@ class Settings:
             fail_open=e.get("SHOP_FAIL_OPEN", "1") == "1",
             shadow=e.get("SHOP_SHADOW", "0") == "1",
             recording=e.get("SHOP_RECORDING", "0") == "1",
+            invite_code=e.get("SHOP_INVITE_CODE", "").strip(),
+            tunnel=e.get("SHOP_TUNNEL", "0") == "1",
         )
 
 
@@ -186,8 +193,15 @@ def create_app(
     @app.middleware("http")
     async def cookies(request: Request, call_next: Any) -> Response:
         """Every response carries the session and device cookies, redirects included."""
+        path = request.url.path
+        open_path = path.startswith(("/gravar", "/static")) or path == "/saude"
+        if s.invite_code and not open_path:
+            # Invitation only: without a recorded session there is nothing to see.
+            sess = sessions.get(request.cookies.get("sid", ""))
+            if not (sess and sess.rec):
+                return RedirectResponse("/gravar", status_code=303)
         response: Response = await call_next(request)
-        if request.url.path.startswith("/static") or request.url.path == "/saude":
+        if path.startswith("/static") or path == "/saude":
             return response
         verdict = getattr(request.state, "lab_verdict", None)
         if s.lab_mode and verdict is not None:
@@ -262,12 +276,12 @@ def create_app(
                     # Fingerprints are only meaningful when our proxy computed them.
                     "ja4": (
                         fingerprint(request.headers.get("x-ja4-fingerprint"), 64)
-                        if s.behind_proxy
+                        if s.behind_proxy and not s.tunnel
                         else None
                     ),
                     "http2_fingerprint": (
                         fingerprint(request.headers.get("x-http2-fingerprint"), 256)
-                        if s.behind_proxy
+                        if s.behind_proxy and not s.tunnel
                         else None
                     ),
                     "telemetria": tel,
@@ -505,32 +519,45 @@ def create_app(
         )
         request.state.sid, request.state.did = sid, me["did"]
 
+    consent_ctx: dict[str, Any] = {"pede_convite": bool(s.invite_code), "tunel": s.tunnel}
+
     def recording_off(request: Request) -> Response | None:
         if not s.recording:
             return render(request, "negado.html", status=404, track=False, titulo="Não encontrado")
         return None
 
     @app.get("/gravar", response_class=HTMLResponse)
-    async def record_consent(request: Request) -> Response:
-        return recording_off(request) or render(request, "gravar.html", track=False)
+    async def record_consent(request: Request, convite: str = "") -> Response:
+        return recording_off(request) or render(
+            request, "gravar.html", track=False, convite=convite[:32], **consent_ctx
+        )
 
     @app.post("/gravar", response_class=HTMLResponse)
     async def record_start(
         request: Request,
         codigo: Annotated[str, Form(max_length=8)],
         aceito: Annotated[str, Form(max_length=3)] = "",
+        convite: Annotated[str, Form(max_length=32)] = "",
     ) -> Response:
         if off := recording_off(request):
             return off
+        if s.invite_code and not hmac.compare_digest(
+            convite.strip().encode(), s.invite_code.encode()
+        ):
+            await asyncio.sleep(1.0)  # makes guessing the invitation slow
+            return render(
+                request, "gravar.html", status=403, track=False, **consent_ctx,
+                erro="Convite inválido. Confira o link que você recebeu.",
+            )  # fmt: skip
         codigo = codigo.strip().upper()
         if not (2 <= len(codigo) <= 8 and codigo.isalnum() and codigo.isascii()):
             return render(
-                request, "gravar.html", status=400, track=False,
+                request, "gravar.html", status=400, track=False, convite=convite, **consent_ctx,
                 erro="O código deve ter de 2 a 8 letras ou números, sem espaços.",
             )  # fmt: skip
         if aceito != "sim":
             return render(
-                request, "gravar.html", status=400, track=False,
+                request, "gravar.html", status=400, track=False, convite=convite, **consent_ctx,
                 erro="Sem o seu consentimento a sessão não é gravada.",
             )  # fmt: skip
         start_recorded_session(request, codigo)

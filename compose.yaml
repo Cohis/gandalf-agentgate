@@ -69,6 +69,8 @@ services:
       SHOP_LAB_MODE: ${SHOP_LAB_MODE:-1}
       SHOP_SHADOW: ${SHOP_SHADOW:-0}   # 1 = ask the engine but never block (data collection)
       SHOP_RECORDING: ${SHOP_RECORDING:-0}   # 1 = /gravar: consented, labelled human sessions
+      SHOP_INVITE_CODE: ${SHOP_INVITE_CODE:-}   # set = the whole shop is invitation only
+      SHOP_TUNNEL: ${SHOP_TUNNEL:-0}           # 1 = reached through a tunnel: TLS fingerprints dropped
     depends_on:
       engine: { condition: service_healthy }
     healthcheck:

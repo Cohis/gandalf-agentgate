@@ -307,3 +307,47 @@ def test_a_request_the_contract_rejects_fails_open_instead_of_500(engine: FakeEn
         headers={"User-Agent": "U" * 2000},  # truncated by the shop; and if not, still no 500
     )
     assert r.status_code == 303
+
+
+# ------------------------------------------------------------ public, by invitation
+
+
+def test_invitation_gates_the_whole_shop(engine: FakeEngine) -> None:
+    c = make(engine, recording=True, invite_code="montanha42", tunnel=True)
+    for path in ("/", "/cadastro", "/login", "/checkout"):
+        assert c.get(path).headers["location"] == "/gravar"
+    assert signup(c).headers["location"] == "/gravar" and not engine.calls
+    page = c.get("/gravar?convite=montanha42").text
+    assert 'value="montanha42"' in page and "ngrok" in page
+
+
+def test_wrong_invitation_records_nothing(
+    engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_sleep(_: float) -> None: ...
+
+    monkeypatch.setattr("gandalf_shop.app.asyncio.sleep", no_sleep)
+    c = make(engine, recording=True, invite_code="montanha42")
+    assert start(c, convite="chute").status_code == 403
+    assert start(c).status_code == 403  # no invitation at all
+    assert not c.app.state.participants  # type: ignore[attr-defined]
+    assert c.get("/").headers["location"] == "/gravar"
+
+
+def test_invited_visitor_can_use_the_shop_and_tunnel_drops_tls_fingerprints(
+    engine: FakeEngine,
+) -> None:
+    c = make(engine, recording=True, invite_code="montanha42", tunnel=True, behind_proxy=True)
+    c.base_url = httpx.URL("https://testserver")  # cookies are Secure behind the proxy
+    assert start(c, convite="montanha42").headers["location"] == "/gravar/tarefas"
+    assert c.get("/").status_code == 200
+    r = c.post(
+        "/cadastro",
+        data={"nome": "A", "email": "z@example.com", "senha": "segredo1"},
+        headers={"X-JA4-Fingerprint": "t13d_tunnel_agent", "X-Lab-Client-IP": "9.9.9.9"},
+    )
+    assert r.status_code == 303
+    call = engine.calls[0]
+    assert call["ja4"] is None and call["http2_fingerprint"] is None  # they were the tunnel's
+    assert call["ip"].startswith("187.")  # the participant's fictional address, nothing else
+    assert engine.labels[0]["perfil"] == "real_P1"

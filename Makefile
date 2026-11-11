@@ -1,4 +1,4 @@
-.PHONY: record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
+.PHONY: public tunnel record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
 
 RUN ?= coleta
 
@@ -53,6 +53,15 @@ reload:          ## tell the running engine to load models/ACTIVE
 record:          ## open the lab for recording real people at https://localhost:8443/gravar
 	SHOP_RECORDING=1 docker compose up -d --build --wait
 	@echo "Abra https://localhost:8443/gravar em uma janela anônima"
+
+public:          ## recording for people on their own computers: make public CONVITE=<code>, then make tunnel
+	@test -n "$(CONVITE)" || { echo "use: make public CONVITE=<codigo>"; exit 1; }
+	SHOP_RECORDING=1 SHOP_LAB_MODE=0 SHOP_TUNNEL=1 SHOP_INVITE_CODE=$(CONVITE) \
+		docker compose up -d --build --wait
+	@echo "agora rode: make tunnel"
+
+tunnel:          ## expose the shop (and only the shop) through ngrok
+	ngrok http https://localhost:8443
 
 record-status:   ## how many recorded sessions and events each participant has
 	@docker compose exec -T postgres psql -U gandalf gandalf -c "SELECT l.perfil AS participante, \
