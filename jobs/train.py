@@ -119,7 +119,9 @@ def fit(train: pl.DataFrame, valid: pl.DataFrame) -> Model:
     )
     # Platt scaling on validation: class weights distort the raw probabilities.
     raw = booster.predict(xv, raw_score=True, num_iteration=booster.best_iteration)
-    platt = LogisticRegression(C=1e6).fit(raw.reshape(-1, 1), yv)
+    # Regularised: on a nearly separable validation set an unregularised fit collapses
+    # every score to 0 or 1 and the thresholds stop meaning anything.
+    platt = LogisticRegression(C=0.05).fit(raw.reshape(-1, 1), yv)
     return Model(booster, float(platt.coef_[0, 0]), float(platt.intercept_[0]))
 
 
@@ -201,7 +203,9 @@ def main() -> None:
     sv = model.predict(xv)
     desafiar = threshold_at_fpr(sv[yv == 0], TARGET_FPR)
     # Deny only above every legitimate score seen in validation.
-    negar = float(min(max(np.nextafter(sv[yv == 0].max(), 1.0), desafiar), 1.0))
+    # ...and never below 0.99: with this little validation data a wrong challenge is
+    # the affordable mistake, a wrong denial is not.
+    negar = float(min(max(np.nextafter(sv[yv == 0].max(), 1.0), desafiar, 0.99), 1.0))
 
     xt, _ = xy(test)
     st = model.predict(xt)

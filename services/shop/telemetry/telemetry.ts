@@ -96,10 +96,15 @@
       filledWithoutKeys = true;
     }
   }, true);
+  // Clicking a field fires pointerdown -> focusin -> click. That is ONE action: the
+  // click counts it. Only focus that arrives by keyboard (Tab) is an action of its own.
+  // Counting both made every mouse user look like they acted twice ~60 ms apart.
+  let lastPointerDown = -Infinity;
+  addEventListener("pointerdown", () => { lastPointerDown = performance.now(); }, true);
   addEventListener("focusin", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       lastKey = 0; // a pause between fields is not typing cadence
-      action();
+      if (performance.now() - lastPointerDown > 1000) action();
       publish();
     }
   }, true);

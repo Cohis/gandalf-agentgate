@@ -30,6 +30,7 @@ from simulator.human import World
 
 SCENARIOS = ("fazenda_contas", "credential_stuffing", "card_testing")
 CHEAP_ITEM = "p6"  # R$ 4,90: what a card tester buys
+COUPON_ITEMS = ("p6", "p3", "p1")  # what a R$ 10 coupon makes free or nearly free
 
 
 def actor(nivel: int, perfil: str, cenario: str, driver: str) -> Actor:
@@ -77,8 +78,11 @@ async def l1_http(
             {"nome": ident.nome, "email": ident.email, "senha": ident.senha, "bio": ident.bio},
         )
         cards = 1 if cenario == "fazenda_contas" else rng.randint(2, 4)
+        farm = cenario == "fazenda_contas"
         for _ in range(cards):
-            await post("/carrinho/adicionar", {"pid": CHEAP_ITEM})
+            await post(
+                "/carrinho/adicionar", {"pid": rng.choice(COUPON_ITEMS) if farm else CHEAP_ITEM}
+            )
             data = {"cartao": test_card(rng, valid=cenario != "card_testing" or rng.random() < 0.7)}
             if cenario == "fazenda_contas":
                 data["cupom"] = "PRIMEIRA10"
@@ -127,8 +131,10 @@ class Script:
         await self.press(f"{f} button[type=submit]")
 
     async def pay(self, *, coupon: bool, valid: bool) -> None:
+        # A card tester buys the cheapest thing; a coupon abuser takes anything it covers.
+        item = self.rng.choice(COUPON_ITEMS) if coupon else CHEAP_ITEM
         await self.page.goto("/")
-        await self.press(f'form[action="/carrinho/adicionar"]:has([value="{CHEAP_ITEM}"]) button')
+        await self.press(f'form[action="/carrinho/adicionar"]:has([value="{item}"]) button')
         await self.page.goto("/checkout")
         f = 'form[action="/checkout"]'
         if not await self.page.locator(f).count():
