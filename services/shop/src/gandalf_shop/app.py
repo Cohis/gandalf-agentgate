@@ -139,6 +139,17 @@ def client_ip(request: Request, s: Settings) -> str:
         return "0.0.0.0"  # noqa: S104 - unix socket or test transport
 
 
+def fingerprint(value: str | None, limit: int) -> str | None:
+    """Fingerprints from the proxy have no fixed size (a real browser's HTTP/2 one can
+    run past 300 characters). Long ones are replaced by a stable digest: equality is
+    all the engine needs, and an oversized header must never break a customer's page."""
+    if not value:
+        return None
+    if len(value) <= limit:
+        return value
+    return "h:" + hashlib.sha256(value.encode()).hexdigest()[:40]
+
+
 def event_time(request: Request, s: Settings) -> datetime:
     """Lab only: generators may shift the clock to spread sessions over simulated days.
     The offset is added to the real clock, so timing inside a session stays real."""
@@ -235,32 +246,40 @@ def create_app(
         sid, sess = session_of(request)
         seen: set[str] = set()
         revisits = sum(1 for p in sess.pages if p in seen or seen.add(p))  # type: ignore[func-returns-value]
-        payload = AssessRequest.model_validate(
-            {
-                "id_requisicao": "rq_" + secrets.token_hex(12),
-                "evento": evento,
-                "momento": event_time(request, s),
-                "conta_id": sess.conta_id,
-                "dispositivo_id": device_of(request),
-                "sessao_id": sid,
-                "ip": sess.rec_ip or client_ip(request, s),
-                "user_agent": request.headers.get("user-agent", "")[:1024],
-                # Fingerprints are only meaningful when our proxy computed them.
-                "ja4": request.headers.get("x-ja4-fingerprint") if s.behind_proxy else None,
-                "http2_fingerprint": (
-                    request.headers.get("x-http2-fingerprint") if s.behind_proxy else None
-                ),
-                "telemetria": tel,
-                "sessao": {
-                    "paginas_vistas": len(sess.pages),
-                    "segundos_desde_inicio": round(time.monotonic() - sess.started, 3),
-                    "desvios_do_caminho": sum(1 for p in sess.pages if p not in DIRECT_PATH),
-                    "voltas": revisits,
-                },
-            }
-            | extra
-        )
         try:
+            # Building the request is inside the guard too: nothing about risk scoring
+            # may ever turn into an error page for a customer.
+            payload = AssessRequest.model_validate(
+                {
+                    "id_requisicao": "rq_" + secrets.token_hex(12),
+                    "evento": evento,
+                    "momento": event_time(request, s),
+                    "conta_id": sess.conta_id,
+                    "dispositivo_id": device_of(request),
+                    "sessao_id": sid,
+                    "ip": sess.rec_ip or client_ip(request, s),
+                    "user_agent": request.headers.get("user-agent", "")[:1024],
+                    # Fingerprints are only meaningful when our proxy computed them.
+                    "ja4": (
+                        fingerprint(request.headers.get("x-ja4-fingerprint"), 64)
+                        if s.behind_proxy
+                        else None
+                    ),
+                    "http2_fingerprint": (
+                        fingerprint(request.headers.get("x-http2-fingerprint"), 256)
+                        if s.behind_proxy
+                        else None
+                    ),
+                    "telemetria": tel,
+                    "sessao": {
+                        "paginas_vistas": len(sess.pages),
+                        "segundos_desde_inicio": round(time.monotonic() - sess.started, 3),
+                        "desvios_do_caminho": sum(1 for p in sess.pages if p not in DIRECT_PATH),
+                        "voltas": revisits,
+                    },
+                }
+                | extra
+            )
             r = await client.post(
                 "/avaliar",
                 content=payload.model_dump_json(),

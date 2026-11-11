@@ -277,3 +277,33 @@ def test_ending_a_session_starts_the_next_and_finishing_stops_recording(engine: 
     assert "Obrigado" in done.text and "Gravando" not in done.text
     signup(c)
     assert len(engine.labels) == 0  # after finishing, nothing is recorded as a volunteer
+
+
+def test_oversized_proxy_fingerprint_never_breaks_the_page(engine: FakeEngine) -> None:
+    """Found with a real Brave: its HTTP/2 fingerprint is longer than the contract allows."""
+    c = make(engine, behind_proxy=True)
+    long_fp = "1:65536;2:0;4:6291456;6:262144|15663105|" + "3:0:0:201," * 40 + "|m,a,s,p"
+    for _ in range(2):
+        r = c.post(
+            "/cadastro",
+            data={"nome": "A", "email": "x@example.com", "senha": "segredo1"},
+            headers={
+                "X-HTTP2-Fingerprint": long_fp,
+                "X-JA4-Fingerprint": "t13d1516h2_8daaf6152771_02713d6af862",
+            },
+        )
+        assert r.status_code in {303, 400}
+    a, b = engine.calls
+    assert a["http2_fingerprint"].startswith("h:") and len(a["http2_fingerprint"]) <= 256
+    assert a["http2_fingerprint"] == b["http2_fingerprint"]  # stable: still comparable
+    assert a["ja4"] == "t13d1516h2_8daaf6152771_02713d6af862"
+
+
+def test_a_request_the_contract_rejects_fails_open_instead_of_500(engine: FakeEngine) -> None:
+    c = make(engine)
+    r = c.post(
+        "/cadastro",
+        data={"nome": "A", "email": "y@example.com", "senha": "segredo1"},
+        headers={"User-Agent": "U" * 2000},  # truncated by the shop; and if not, still no 500
+    )
+    assert r.status_code == 303

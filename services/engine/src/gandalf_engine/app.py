@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -36,8 +37,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         r = redis or Redis.from_url(
-            settings.redis_url, socket_timeout=0.05, socket_connect_timeout=0.2
+            settings.redis_url, socket_timeout=0.15, socket_connect_timeout=0.3
         )
+        # Open the connection now: the first customer should not pay for the handshake
+        # (and be answered in degraded mode because of it).
+        with contextlib.suppress(Exception):
+            await r.ping()
         st: Storage = storage or (
             PostgresStorage(settings.database_url) if settings.database_url else NullStorage()
         )
