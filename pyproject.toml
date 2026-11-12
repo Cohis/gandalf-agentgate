@@ -15,6 +15,9 @@ gandalf-engine = { workspace = true }
 gandalf-shop = { workspace = true }
 
 [dependency-groups]
+agent = [
+    "browser-use>=1.0",
+]
 dev = [
     "gandalf-contracts",
     "gandalf-features",
@@ -59,4 +62,5 @@ ignore = ["S101"]
 # traffic generators: randomness is behaviour, not cryptography
 "simulator/**" = ["S311"]
 "attackers/**" = ["S311"]
+"attackers/agent.py" = ["S311", "E501"]  # prompts and in-page JavaScript
 "jobs/**" = ["S608"]
