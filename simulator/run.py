@@ -115,6 +115,27 @@ async def human_session(
         await ctx.close()
 
 
+async def fraud_session(
+    browsers, base, rng, clock, truth, world, strokes, sessao, touch_share
+) -> None:  # type: ignore[no-untyped-def]
+    from .fraud import SCENARIOS, actors, run_fraudster
+    from .human import PERSONAS
+
+    cenario = rng.choice(SCENARIOS)
+    phone = rng.random() < (0.3 if touch_share is None else touch_share)
+    persona = next(p for p in PERSONAS if p.touch == phone and p.nome in {"padrao", "celular"})
+    ctx = await _context(
+        browsers["stealth"], base, persona.ip(rng), clock, rng, phone=persona.touch
+    )
+    try:
+        page = await ctx.new_page()
+        who = [actors(cenario)[0]]
+        _listen(page, truth, who, sessao)
+        await run_fraudster(page, rng, persona, strokes, world, who, cenario)
+    finally:
+        await ctx.close()
+
+
 async def script_session(
     browsers, base, rng, clock, truth, world, nivel, sessao, touch_share
 ) -> None:  # type: ignore[no-untyped-def]  # noqa: E501
@@ -145,6 +166,7 @@ async def main() -> None:
     ap.add_argument("--humans", type=int, default=60)
     ap.add_argument("--l1", type=int, default=20)
     ap.add_argument("--l2", type=int, default=20)
+    ap.add_argument("--fraud", type=int, default=0, help="human fraudster sessions")
     ap.add_argument("--days", type=float, default=4.0, help="simulated time span")
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--seed", type=int, default=1)
@@ -162,7 +184,7 @@ async def main() -> None:
     strokes = load()
     truth, world, clock = Truth(a.run), World(), Clock(a.days)
 
-    plan = ["h"] * a.humans + ["1"] * a.l1 + ["2"] * a.l2
+    plan = ["h"] * a.humans + ["1"] * a.l1 + ["2"] * a.l2 + ["f"] * a.fraud
     rng.shuffle(plan)
     # start with a few people so attackers have accounts to aim at
     plan.sort(key=lambda k: 0 if k == "h" else 1)
@@ -194,11 +216,17 @@ async def main() -> None:
                     job = human_session(
                         browsers, base, srng, clock, truth, world, strokes, sessao, a.touch
                     )
+                elif kind == "f":
+                    job = fraud_session(
+                        browsers, base, srng, clock, truth, world, strokes, sessao, a.touch
+                    )
                 else:
                     job = script_session(
                         browsers, base, srng, clock, truth, world, int(kind), sessao, a.touch
                     )
-                jobs.append(asyncio.wait_for(job, SESSION_TIMEOUT_S))
+                # a person creating several accounts by hand takes a while
+                limit = SESSION_TIMEOUT_S * (2.5 if kind == "f" else 1)
+                jobs.append(asyncio.wait_for(job, limit))
             results = await asyncio.gather(*jobs, return_exceptions=True)
             for kind, res in zip(batch, results, strict=True):
                 if isinstance(res, Exception):

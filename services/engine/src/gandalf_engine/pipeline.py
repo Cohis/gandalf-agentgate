@@ -76,6 +76,7 @@ class Engine:
         enricher: Enricher,
         rules: list[Rule],
         scorer: Scorer,
+        fraud_scorer: Scorer | None = None,
         policy: Policy,
         ip_hmac_key: str,
     ) -> None:
@@ -85,6 +86,7 @@ class Engine:
         self._enricher = enricher
         self._rules = rules
         self.scorer = scorer  # swapped atomically on model reload (phase 2)
+        self.fraud_scorer = fraud_scorer
         self._policy = policy
         self._ip_hmac_key = ip_hmac_key
         self.metrics = Metrics()
@@ -121,15 +123,29 @@ class Engine:
         fired = evaluate(self._rules, features)
         lap("regras")
 
-        scorer = self.scorer
+        scorer, fraud_scorer = self.scorer, self.fraud_scorer
         score, contributions = scorer.score(features)
+        score_fraude: float | None = None
+        fraud_contrib: dict[str, float] = {}
+        if fraud_scorer is not None:
+            score_fraude, fraud_contrib = fraud_scorer.score(features)
+        t_fraude = fraud_scorer.thresholds if fraud_scorer else None
         lap("modelo")
 
-        decisao, acao = self._policy.decide(score, fired, scorer.thresholds)
+        decisao, acao = self._policy.decide(
+            score, fired, scorer.thresholds, score_fraude=score_fraude, t_fraude=t_fraude
+        )
         ator = self._policy.actor(score, scorer.thresholds)
         motivos = [r.motivo for r in fired]
         if decisao is not Decisao.aprovar:
-            motivos += [m for m in reasons(features, contributions) if m not in motivos]
+            explain = []
+            if self._policy.automation_flag(score, scorer.thresholds) is not Decisao.aprovar:
+                explain += reasons(features, contributions)
+            if self._policy.fraud_flag(score_fraude, t_fraude) is not Decisao.aprovar:
+                explain += reasons(features, fraud_contrib)
+            if not explain:  # a hard rule fired on its own
+                explain = reasons(features, contributions)
+            motivos += [m for m in explain if m not in motivos]
         if degraded:
             motivos.append("modo degradado: contadores de velocidade indisponíveis")
         lap("decisao")
@@ -144,11 +160,11 @@ class Engine:
             acao=acao,
             ator=ator,
             score_automacao=score,
-            score_fraude=None,
+            score_fraude=score_fraude,
             motivos=motivos,
             regras_acionadas=[r.id for r in fired],
             desafio_id=desafio_id,
-            versao_modelo=scorer.version,
+            versao_modelo=scorer.version + (f"+{fraud_scorer.version}" if fraud_scorer else ""),
             versao_features=FEATURE_VERSION,
             versao_politica=self._policy.versao,
             modo_degradado=degraded,

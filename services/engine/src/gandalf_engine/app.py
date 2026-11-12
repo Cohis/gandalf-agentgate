@@ -18,7 +18,7 @@ from .enrich import Enricher
 from .pipeline import Engine
 from .policy import Policy
 from .rules import load_rules
-from .scoring import HeuristicScorer, ModelError, Scorer, load_scorer
+from .scoring import HeuristicScorer, ModelError, Scorer, load_fraud_scorer, load_scorer
 from .storage import NullStorage, PostgresStorage, Storage
 
 log = logging.getLogger("gandalf.engine")
@@ -32,6 +32,14 @@ def _scorer_or_baseline(settings: Settings) -> Scorer:
     except (ModelError, OSError, KeyError, ValueError) as exc:
         log.warning("active model refused, serving the baseline: %s", exc)
         return HeuristicScorer()
+
+
+def _fraud_scorer_or_none(settings: Settings) -> Scorer | None:
+    try:
+        return load_fraud_scorer(settings.model_dir)
+    except (ModelError, OSError, KeyError, ValueError) as exc:
+        log.warning("active fraud model refused, not scoring fraud: %s", exc)
+        return None
 
 
 class ChallengeResult(BaseModel):
@@ -68,6 +76,7 @@ def create_app(
             enricher=Enricher(),
             rules=load_rules(settings.rules_path),
             scorer=_scorer_or_baseline(settings),
+            fraud_scorer=_fraud_scorer_or_none(settings),
             policy=Policy.load(settings.policy_path),
             ip_hmac_key=settings.ip_hmac_key,
         )
@@ -106,10 +115,15 @@ def create_app(
         one assignment, so requests in flight finish on the model they started with."""
         try:
             scorer = await asyncio.to_thread(load_scorer, settings.model_dir)
+            fraud = await asyncio.to_thread(load_fraud_scorer, settings.model_dir)
         except (ModelError, OSError, KeyError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=f"modelo recusado: {exc}") from exc
         request.app.state.engine.scorer = scorer
-        return {"versao_modelo": scorer.version}
+        request.app.state.engine.fraud_scorer = fraud
+        out = {"versao_modelo": scorer.version}
+        if fraud is not None:
+            out["versao_fraude"] = fraud.version
+        return out
 
     @app.get("/saude")
     async def saude(request: Request, response: Response) -> dict[str, object]:

@@ -1,4 +1,4 @@
-.PHONY: public tunnel record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
+.PHONY: eval public tunnel record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
 
 RUN ?= coleta
 
@@ -38,14 +38,20 @@ load-burst:      ## worst case: 200 clients firing in the same instant, every se
 simulate:        ## labelled lab traffic on a private shop (port 8444); the public shop is untouched
 	docker compose --profile sim up -d --build --wait shop-sim proxy-sim
 	LAB_SHOP_URL=https://localhost:8444 uv run python -m simulator.run \
-		--humans 360 --l1 100 --l2 150 --days 6 --concurrency 8 --run $(RUN)
+		--humans 360 --l1 100 --l2 150 --fraud 110 --days 6 --concurrency 8 --run $(RUN)
 
 labels:          ## deliver a run's answer key to the engine: make labels RUN=<name>
 	uv run python -m simulator.labels data/runs/$(RUN).jsonl
 
-train:           ## train + evaluate, write eval/out/fase2.md, activate and hot-reload
+train:           ## train both models, write eval/out/*.md, activate them and hot-reload
 	uv run python -m jobs.train --activate
+	uv run python -m jobs.train_fraud --activate
 	$(MAKE) reload
+
+eval:            ## train both models and write the reports, WITHOUT activating anything
+	uv run python -m jobs.train
+	uv run python -m jobs.train_fraud
+	@echo "relatórios: eval/out/fase2.md (automação) e eval/out/fraude.md (fraude)"
 
 reload:          ## tell the running engine to load models/ACTIVE
 	curl -fsS -X POST -H "X-Gandalf-Key: $${GANDALF_SERVICE_KEY:-dev-only-change-me}" \

@@ -1,6 +1,6 @@
 # Score -> decision. Phase 1 thresholds are placeholders; from phase 3 on they are
 # chosen by minimising  custo_fn * FN + custo_fp * FP  on the validation period.
-versao: "p1"
+versao: "p2"  # p2: automation and fraud scores crossed
 ator:
   limiar_automacao: 0.5   # above this the actor is classified as undeclared automation
 decisao:
@@ -9,4 +9,9 @@ decisao:
 custos:                   # used by the offline threshold search
   custo_fn: 20.0          # fraud that got through
   custo_fp: 5.0           # good customer blocked
-  custo_desafio: 0.5      # friction of a passkey prompt
+  custo_desafio: 0.5      # friction of a passkey prompt or an out-of-session confirmation
+  desafio_barra: 0.8      # share of fraud a challenge stops (a stolen password does not
+                          # come with the owner's phone; a card tester may own the account)
+  prevalencia_fraude: 0.02 # share of real traffic that is fraud. The lab has far more
+                          # attacks than customers; costs are reweighted to this rate,
+                          # otherwise challenging everyone looks cheap. An assumption.

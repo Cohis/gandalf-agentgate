@@ -131,3 +131,15 @@ def load_scorer(model_dir: Path | None) -> Scorer:
     if not active.exists():
         return HeuristicScorer()
     return LightGBMScorer(model_dir / active.read_text(encoding="utf-8").strip())
+
+
+def load_fraud_scorer(model_dir: Path | None) -> Scorer | None:
+    """The 'is this fraud?' model named in ``<model_dir>/ACTIVE_FRAUDE``, if any.
+    There is no hand-written fallback: without a trained model the engine simply
+    does not score fraud (score_fraude stays null)."""
+    if model_dir is None:
+        return None
+    active = model_dir / "ACTIVE_FRAUDE"
+    if not active.exists():
+        return None
+    return LightGBMScorer(model_dir / active.read_text(encoding="utf-8").strip())

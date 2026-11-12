@@ -63,4 +63,4 @@ ignore = ["S101"]
 "simulator/**" = ["S311"]
 "attackers/**" = ["S311"]
 "attackers/agent.py" = ["S311", "E501"]  # prompts and in-page JavaScript
-"jobs/**" = ["S608"]
+"jobs/**" = ["S608", "E501"]  # report-building code

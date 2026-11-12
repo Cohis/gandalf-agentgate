@@ -77,7 +77,7 @@ def load() -> pl.DataFrame:
     sql = """
         SELECT e.avaliacao_id, e.sessao_id, e.momento, e.evento, f.features,
                l.eh_automacao, l.nivel_atacante, l.perfil, l.fonte,
-               d.score_automacao AS score_online, d.versao_modelo
+               d.score_automacao AS score_online, d.versao_modelo, l.eh_fraude
         FROM feature_snapshots f
         JOIN labels l USING (avaliacao_id)
         JOIN events e USING (avaliacao_id)
@@ -94,7 +94,7 @@ def load() -> pl.DataFrame:
     if not rows:
         raise SystemExit("no labelled data: run simulator.run, then simulator.labels")
     cols = ("avaliacao_id sessao_id momento evento features y nivel perfil fonte "
-            "score_online versao_online").split()  # fmt: skip
+            "score_online versao_online yf").split()  # fmt: skip
     df = pl.DataFrame([dict(zip(cols, r, strict=True)) for r in rows], infer_schema_length=None)
     feats = pl.DataFrame(
         [{n: r[4].get(n) for n in FEATURE_NAMES} for r in rows],
