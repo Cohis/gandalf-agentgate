@@ -97,8 +97,13 @@ class Script:
     """A scripted browser session. ``stealth`` only changes the pacing: the stealth
     *environment* comes from the browser build it is given (see simulator/run.py)."""
 
-    def __init__(self, page: Any, rng: random.Random, world: World, *, stealth: bool) -> None:
+    def __init__(
+        self, page: Any, rng: random.Random, world: World, *, stealth: bool, touch: bool = False
+    ) -> None:
         self.page, self.rng, self.world, self.stealth = page, rng, world, stealth
+        # A script can claim to be a phone as easily as a person can hold one: it taps
+        # instead of clicking. The taps still land on the exact centre.
+        self.touch = touch
         self.key_delay = rng.choice((60, 80, 100, 120))  # one fixed cadence per session
 
     async def pause(self) -> None:
@@ -108,7 +113,7 @@ class Script:
     async def put(self, selector: str, text: str) -> None:
         loc = self.page.locator(selector)
         if self.stealth and self.rng.random() < 0.7:
-            await loc.click()
+            await (loc.tap() if self.touch else loc.click())
             await loc.press_sequentially(text, delay=self.key_delay)
         else:
             await loc.fill(text)
@@ -116,7 +121,8 @@ class Script:
 
     async def press(self, selector: str) -> None:
         async with self.page.expect_navigation(wait_until="domcontentloaded", timeout=15_000):
-            await self.page.locator(selector).first.click()  # dead centre, no pointer travel
+            target = self.page.locator(selector).first
+            await (target.tap() if self.touch else target.click())  # dead centre, no travel
         await self.pause()
 
     async def signup(self) -> None:

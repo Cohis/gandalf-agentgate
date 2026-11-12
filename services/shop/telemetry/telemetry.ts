@@ -14,13 +14,17 @@
   const MAX_ACTIONS = 200;
 
   // Carried across page loads so a multi-page session has a rhythm. Aggregates only.
-  interface Carry { acts: number[]; last: number; lin: number[]; clicks: number; center: number }
+  interface Carry {
+    acts: number[]; last: number; lin: number[]; clicks: number; center: number;
+    downs: number; touch: number; area: number;
+  }
   const carry: Carry = (() => {
     try {
       const raw = sessionStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw) as Carry;
+      // state saved by an older script has no touch counters
+      if (raw) return Object.assign({ downs: 0, touch: 0, area: 0 }, JSON.parse(raw)) as Carry;
     } catch { /* storage blocked: start fresh */ }
-    return { acts: [], last: 0, lin: [], clicks: 0, center: 0 };
+    return { acts: [], last: 0, lin: [], clicks: 0, center: 0, downs: 0, touch: 0, area: 0 };
   })();
 
   const save = () => {
@@ -100,7 +104,16 @@
   // click counts it. Only focus that arrives by keyboard (Tab) is an action of its own.
   // Counting both made every mouse user look like they acted twice ~60 ms apart.
   let lastPointerDown = -Infinity;
-  addEventListener("pointerdown", () => { lastPointerDown = performance.now(); }, true);
+  addEventListener("pointerdown", (e) => {
+    lastPointerDown = performance.now();
+    // Finger or mouse? On a phone there is no cursor path, and that must not be
+    // mistaken for a script that never moved the mouse.
+    carry.downs++;
+    if (e.pointerType === "touch" || e.pointerType === "pen") {
+      carry.touch++;
+      carry.area += Math.min(Math.max(e.width || 0, e.height || 0), 500);
+    }
+  }, true);
   addEventListener("focusin", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       lastKey = 0; // a pause between fields is not typing cadence
@@ -153,6 +166,8 @@
     intervalos_acao_ms: carry.acts.slice(-MAX_ACTIONS),
     trajetoria_cursor_linear: mean(carry.lin),
     cliques_no_centro: carry.clicks ? Math.round((carry.center / carry.clicks) * 1000) / 1000 : null,
+    toque: carry.downs ? Math.round((carry.touch / carry.downs) * 1000) / 1000 : null,
+    area_toque: carry.touch ? Math.round((carry.area / carry.touch) * 10) / 10 : null,
     digitacao: typing(),
     webdriver: navigator.webdriver === true,
     inconsistencias_fingerprint: fpIssues,

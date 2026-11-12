@@ -40,11 +40,36 @@ def _desktop_ua(browser: Any) -> str:
     )
 
 
+PHONES = ((390, 844), (393, 873), (412, 915), (360, 800))
+
+
+def _phone_ua(browser: Any) -> str:
+    major = browser.version.split(".")[0]
+    return (
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{major}.0.0.0 Mobile Safari/537.36"
+    )
+
+
 async def _context(
-    browser: Any, base: str, ip: str, clock: Clock, rng: random.Random, *, mask_ua: bool = True
+    browser: Any,
+    base: str,
+    ip: str,
+    clock: Clock,
+    rng: random.Random,
+    *,
+    mask_ua: bool = True,
+    phone: bool = False,
 ) -> Any:
-    w, h = rng.choice(VIEWPORTS)
-    extra = {"user_agent": _desktop_ua(browser)} if mask_ua else {}
+    w, h = rng.choice(PHONES if phone else VIEWPORTS)
+    extra: dict[str, Any] = {"user_agent": _desktop_ua(browser)} if mask_ua else {}
+    if phone:
+        extra = {
+            "user_agent": _phone_ua(browser),
+            "has_touch": True,
+            "is_mobile": True,
+            "device_scale_factor": 3,
+        }
     return await browser.new_context(
         **extra,
         base_url=base,
@@ -66,11 +91,15 @@ def _listen(page: Any, truth: Truth, who: list[Any], sessao: str) -> None:
     page.on("response", on_response)
 
 
-async def human_session(browsers, base, rng, clock, truth, world, strokes, sessao) -> None:  # type: ignore[no-untyped-def]
-    persona = pick_persona(rng, world)
+async def human_session(
+    browsers, base, rng, clock, truth, world, strokes, sessao, touch_share
+) -> None:  # type: ignore[no-untyped-def]  # noqa: E501
+    persona = pick_persona(rng, world, touch_share)
     returning = bool(world.accounts) and (persona.returning_only or rng.random() < 0.45)
     known, device = rng.choice(world.accounts) if returning else (None, [])
-    ctx = await _context(browsers["stealth"], base, persona.ip(rng), clock, rng)
+    ctx = await _context(
+        browsers["stealth"], base, persona.ip(rng), clock, rng, phone=persona.touch
+    )
     try:
         if known and not persona.new_device:
             await ctx.add_cookies(device)  # same device as when the account was created
@@ -86,19 +115,27 @@ async def human_session(browsers, base, rng, clock, truth, world, strokes, sessa
         await ctx.close()
 
 
-async def script_session(browsers, base, rng, clock, truth, world, nivel, sessao) -> None:  # type: ignore[no-untyped-def]
+async def script_session(
+    browsers, base, rng, clock, truth, world, nivel, sessao, touch_share
+) -> None:  # type: ignore[no-untyped-def]  # noqa: E501
     cenario = rng.choice(SCENARIOS)
     if nivel == 1 and rng.random() < 0.5:
         await l1_http(base, rng, clock, truth, world, cenario, sessao)
         return
     stealth = nivel == 2
+    # Some level 2 scripts pose as phones; otherwise "touch" would be a free pass.
+    touch = stealth and rng.random() < (0.35 if touch_share is None else touch_share)
     browser = browsers["stealth" if stealth else "plain"]
-    ctx = await _context(browser, base, attacker_ip(rng, nivel), clock, rng, mask_ua=stealth)
+    ctx = await _context(
+        browser, base, attacker_ip(rng, nivel), clock, rng, mask_ua=stealth, phone=touch
+    )
     try:
         page = await ctx.new_page()
-        perfil = "navegador_furtivo" if stealth else "playwright_padrao"
+        perfil = (
+            ("furtivo_toque" if touch else "navegador_furtivo") if stealth else "playwright_padrao"
+        )
         _listen(page, truth, [actor(nivel, perfil, cenario, "navegador")], sessao)
-        await Script(page, rng, world, stealth=stealth).run(cenario)
+        await Script(page, rng, world, stealth=stealth, touch=touch).run(cenario)
     finally:
         await ctx.close()
 
@@ -111,6 +148,12 @@ async def main() -> None:
     ap.add_argument("--days", type=float, default=4.0, help="simulated time span")
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument(
+        "--touch",
+        type=float,
+        default=None,
+        help="share of people and level 2 scripts forced onto phones (default: natural mix)",
+    )
     ap.add_argument("--run", default=time.strftime("run-%Y%m%d-%H%M%S"))
     a = ap.parse_args()
 
@@ -148,10 +191,12 @@ async def main() -> None:
                 sessao = f"{a.run}-{n}"
                 srng = random.Random(rng.random())
                 if kind == "h":
-                    job = human_session(browsers, base, srng, clock, truth, world, strokes, sessao)
+                    job = human_session(
+                        browsers, base, srng, clock, truth, world, strokes, sessao, a.touch
+                    )
                 else:
                     job = script_session(
-                        browsers, base, srng, clock, truth, world, int(kind), sessao
+                        browsers, base, srng, clock, truth, world, int(kind), sessao, a.touch
                     )
                 jobs.append(asyncio.wait_for(job, SESSION_TIMEOUT_S))
             results = await asyncio.gather(*jobs, return_exceptions=True)

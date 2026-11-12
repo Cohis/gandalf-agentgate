@@ -63,6 +63,10 @@ class Telemetria(Strict):
     intervalos_acao_ms: Annotated[list[Interval], Field(max_length=200)] = []
     trajetoria_cursor_linear: Fraction | None = None
     cliques_no_centro: Fraction | None = None
+    # Share of pointer activations made by touch (None: no pointer was used at all).
+    # A phone user has no cursor path; without this, that looks exactly like a script.
+    toque: Fraction | None = None
+    area_toque: Annotated[float, Field(ge=0, le=500)] | None = None  # mean contact size, px
     digitacao: Digitacao = Digitacao.ausente
     webdriver: bool = False
     inconsistencias_fingerprint: Annotated[int, Field(ge=0, le=50)] = 0

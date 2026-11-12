@@ -102,3 +102,16 @@ def test_hot_reload_swaps_models_without_restart(tmp_path: Path) -> None:
         still = c.post("/avaliar", json=make_event(), headers=h).json()
         assert still["versao_modelo"] == "m1"
         assert c.post("/admin/recarregar-modelo").status_code == 401
+
+
+def test_engine_starts_on_the_baseline_when_the_active_model_is_incompatible(
+    tmp_path: Path,
+) -> None:
+    write_model(tmp_path, "old", features="f0")
+    (tmp_path / "ACTIVE").write_text("old\n")
+    app = create_app(
+        Settings(service_key=KEY, model_dir=tmp_path), redis=FakeAsyncRedis(), storage=NullStorage()
+    )
+    with TestClient(app) as c:
+        out = c.post("/avaliar", json=make_event(), headers={"X-Gandalf-Key": KEY}).json()
+    assert out["versao_modelo"] == "heuristica-0"

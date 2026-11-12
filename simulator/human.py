@@ -41,13 +41,15 @@ class Persona:
     keyboard_only: bool = False  # screen reader / keyboard navigation
     center_clicks: bool = False  # voice control clicks the exact centre of a target
     dictates: bool = False  # text arrives a word at a time, with no keystrokes
+    touch: bool = False  # phone: taps with a finger, there is no cursor at all
     returning_only: bool = False
     new_device: bool = False
     detour: float = 0.55  # chance of wandering to a page that is not on the way
 
 
 PERSONAS = (
-    Persona("padrao", 0.42),
+    Persona("padrao", 0.34),
+    Persona("celular", 0.20, ip=ip_mobile_cgnat, touch=True, think_s=1.7, key_ms=240),
     Persona("movel_cgnat", 0.15, ip=ip_mobile_cgnat, think_s=1.6, key_ms=210),
     Persona("gerenciador_senhas", 0.12, paste_credentials=True),
     Persona("viajante", 0.06, ip=ip_abroad, returning_only=True),
@@ -68,7 +70,9 @@ class World:
         return [ident.email for ident, _ in self.accounts]
 
 
-def pick_persona(rng: random.Random, world: World) -> Persona:
+def pick_persona(rng: random.Random, world: World, touch_share: float | None = None) -> Persona:
+    if touch_share is not None and rng.random() < touch_share:
+        return next(p for p in PERSONAS if p.touch)
     pool = [p for p in PERSONAS if world.accounts or not p.returning_only]
     return rng.choices(pool, weights=[p.peso for p in pool])[0]
 
@@ -110,6 +114,11 @@ class Human:
             await loc.focus()
             await asyncio.sleep(self.rng.uniform(0.15, 0.5))
             await self.page.keyboard.press("Enter")
+            return
+        if self.p.touch:
+            x, y = await self._target(loc)
+            await asyncio.sleep(self.rng.uniform(0.15, 0.6))  # the thumb travelling
+            await self.page.touchscreen.tap(x, y)
             return
         await self._move(await self._target(loc))
         await asyncio.sleep(self.rng.uniform(0.05, 0.2))

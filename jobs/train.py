@@ -26,7 +26,7 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 import psycopg
-from gandalf_features import FEATURE_NAMES, FEATURE_VERSION
+from gandalf_features import FEATURE_NAMES, FEATURE_VERSION, upgrade_f1
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
 
@@ -63,8 +63,14 @@ ABSOLUTE_PACE = frozenset(
         "sessao_seg_por_pagina",
     }
 )
-ALL_FEATURES = list(FEATURE_NAMES)
-MODEL_FEATURES = [n for n in FEATURE_NAMES if n not in ABSOLUTE_PACE]
+# The contact size of a tap is logged, but every simulated tap (person or script) has
+# the emulator's fixed size, so the model could only learn the emulator from it.
+NOT_YET_TRUSTED = frozenset({"toque_area"})
+ALL_FEATURES = [n for n in FEATURE_NAMES if n not in NOT_YET_TRUSTED]
+MODEL_FEATURES = [n for n in ALL_FEATURES if n not in ABSOLUTE_PACE]
+# A recorded person counts for more than a simulated one: there are few of them and
+# they are the only rows that did not come out of my own generator.
+REAL_WEIGHT = 3.0
 
 
 def load() -> pl.DataFrame:
@@ -76,11 +82,15 @@ def load() -> pl.DataFrame:
         JOIN labels l USING (avaliacao_id)
         JOIN events e USING (avaliacao_id)
         JOIN decisions d USING (avaliacao_id)
-        WHERE f.versao_features = %s
+        WHERE f.versao_features = ANY(%s)
         ORDER BY e.momento
     """
     with psycopg.connect(DSN) as conn:
-        rows = conn.execute(sql, (FEATURE_VERSION,)).fetchall()
+        rows = conn.execute(
+            sql.replace("f.features,", "f.features, f.versao_features,"), ([FEATURE_VERSION, "f1"],)
+        ).fetchall()
+    # f1 vectors predate touch telemetry; they are upgraded by a documented rule.
+    rows = [(*r[:4], r[4] if r[5] == FEATURE_VERSION else upgrade_f1(r[4]), *r[6:]) for r in rows]
     if not rows:
         raise SystemExit("no labelled data: run simulator.run, then simulator.labels")
     cols = ("avaliacao_id sessao_id momento evento features y nivel perfil fonte "
@@ -90,7 +100,24 @@ def load() -> pl.DataFrame:
         [{n: r[4].get(n) for n in FEATURE_NAMES} for r in rows],
         schema={n: pl.Float64 for n in FEATURE_NAMES},
     )
-    return pl.concat([df.drop("features"), feats], how="horizontal")
+    df = pl.concat([df.drop("features"), feats], how="horizontal")
+    return df.with_columns(pl.col("fonte").str.starts_with("gravacao").alias("real"))
+
+
+def people(real: pl.DataFrame) -> list[str]:
+    return sorted(real["perfil"].unique().to_list())
+
+
+def assign_people(real: pl.DataFrame, names: list[str]) -> pl.DataFrame:
+    """Recorded people are split by PERSON, never by event: about one in four goes to
+    validation (to set the threshold), the rest to training."""
+    calib = set(names[1::4])
+    return real.with_columns(
+        pl.when(pl.col("perfil").is_in(list(calib)))
+        .then(pl.lit("validacao"))
+        .otherwise(pl.lit("treino"))
+        .alias("conjunto")
+    )
 
 
 def temporal_split(df: pl.DataFrame) -> pl.DataFrame:
@@ -128,9 +155,10 @@ def fit(train: pl.DataFrame, valid: pl.DataFrame, feats: list[str] | None = None
     xt, yt = xy(train, feats)
     xv, yv = xy(valid, feats)
     params = PARAMS | {"scale_pos_weight": float((yt == 0).sum()) / max(int((yt == 1).sum()), 1)}
+    weights = np.where(train["real"].to_numpy(), REAL_WEIGHT, 1.0)
     booster = lgb.train(
         params,
-        lgb.Dataset(xt, yt, feature_name=feats),
+        lgb.Dataset(xt, yt, weight=weights, feature_name=feats),
         num_boost_round=500,
         valid_sets=[lgb.Dataset(xv, yv)],
         feval=lambda p, d: ("pr_auc", average_precision_score(d.get_label(), p), True),
@@ -199,6 +227,9 @@ def evaluate(name: str, test: pl.DataFrame, scores: np.ndarray, thr: float, rng)
     for lv in sorted(set(nivel[y == 1])):
         m = nivel == lv
         out.append(rate_row(f"Atacante nível {lv} (detecção)", flagged[m], sess[m], rng))
+    for pf in sorted(set(perfil[y == 1])):
+        m = (y == 1) & (perfil == pf)
+        out.append(rate_row(f"Ferramenta: {pf} (detecção)", flagged[m], sess[m], rng))
     out.append(rate_row("Humanos, todos (falso positivo)", flagged[y == 0], sess[y == 0], rng))
     real = (y == 0) & np.char.startswith(perfil.astype(str), "real_")
     if real.any():
@@ -213,13 +244,59 @@ def evaluate(name: str, test: pl.DataFrame, scores: np.ndarray, thr: float, rng)
     return [*out, ""]
 
 
+def leave_one_person_out(
+    sim_train: pl.DataFrame, sim_valid: pl.DataFrame, real: pl.DataFrame, rng
+) -> list[str]:  # type: ignore[no-untyped-def]
+    """How the model treats a person it has never seen: each recorded participant is
+    held out in turn, the model is refitted on everyone else and applied to them."""
+    names = people(real)
+    if len(names) < 3:
+        return ["Menos de 3 participantes gravados: avaliação por pessoa não realizada.", ""]
+    flags, sess, who, phone = [], [], [], []
+    for held in names:
+        rest = assign_people(real.filter(pl.col("perfil") != held), [n for n in names if n != held])
+        train = pl.concat([sim_train, rest.filter(pl.col("conjunto") == "treino")], how="diagonal")
+        valid = pl.concat(
+            [sim_valid, rest.filter(pl.col("conjunto") == "validacao")], how="diagonal"
+        )
+        m = fit(train, valid)
+        xv, yv = xy(valid)
+        thr = threshold_at_fpr(m.predict(xv)[yv == 0], TARGET_FPR)
+        out = real.filter(pl.col("perfil") == held)
+        flags.append(m.predict(xy(out)[0]) >= thr)
+        sess.append(out["sessao_id"].to_numpy())
+        who.append(out["perfil"].to_numpy())
+        phone.append(out["toque"].fill_null(0).to_numpy() >= 0.5)
+    f, g, w, ph = (np.concatenate(a) for a in (flags, sess, who, phone))
+    lines = [
+        "| Grupo | Sessões | Eventos | Sinalizados | IC 95 % |",
+        "|---|---|---|---|---|",
+        rate_row("**Todas as pessoas reais**", f, g, rng),
+        rate_row("No computador (mouse)", f[~ph], g[~ph], rng),
+        rate_row("No celular (toque)", f[ph], g[ph], rng),
+    ]
+    lines += [
+        rate_row(f"Participante {n.removeprefix('real_')}", f[w == n], g[w == n], rng)
+        for n in names
+    ]
+    return [*lines, ""]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--activate", action="store_true", help="point models/ACTIVE at the new model")
     a = ap.parse_args()
     rng = np.random.default_rng(7)
 
-    df = temporal_split(load())
+    everything = load()
+    sim = temporal_split(everything.filter(~pl.col("real")))
+    real = everything.filter(pl.col("real"))
+    real = assign_people(real, people(real))
+    df = pl.concat([sim, real], how="diagonal")
+    sim_train, sim_valid = (sim.filter(pl.col("conjunto") == c) for c in ("treino", "validacao"))
+    # Simulated sessions: oldest for training, most recent for testing. Recorded
+    # people: by person. The test set holds simulated traffic only; how the model
+    # treats a real person is measured separately, leaving one person out at a time.
     train, valid, test = (
         df.filter(pl.col("conjunto") == c) for c in ("treino", "validacao", "teste")
     )
@@ -334,6 +411,15 @@ def main() -> None:
             rng,
         )
     lines += [
+        "## Pessoas reais: uma de fora por vez",
+        "",
+        f"{real['perfil'].n_unique()} voluntários gravados "
+        f"({real['sessao_id'].n_unique()} sessões, {real.height} eventos). Para cada um, o modelo é retreinado **sem nenhuma sessão dessa "
+        "pessoa** e depois aplicado a ela. É a estimativa de falso positivo para alguém que o "
+        "sistema nunca viu. O modelo final treina com cerca de três quartos das pessoas e "
+        "usa as demais para escolher o limiar.",
+        "",
+        *leave_one_person_out(sim_train, sim_valid, real, rng),
         "## Ablação: e se o modelo visse a velocidade absoluta?",
         "",
         f"Com as {len(ABSOLUTE_PACE)} features de ritmo absoluto (média e mínimo dos intervalos, "

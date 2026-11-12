@@ -22,7 +22,7 @@ from ipaddress import IPv6Address, ip_network
 
 from gandalf_contracts import AssessRequest, Digitacao, Evento
 
-FEATURE_VERSION = "f1"
+FEATURE_VERSION = "f2"  # f2 = f1 + toque, toque_area
 
 WINDOWS: dict[str, int] = {"10m": 600, "1h": 3600, "24h": 86400}
 MAX_WINDOW_S = max(WINDOWS.values())
@@ -176,6 +176,8 @@ def compute(ev: AssessRequest, counts: Mapping[str, int], net: NetworkInfo) -> F
     f.update(_rhythm(list(t.intervalos_acao_ms)))
     f["cursor_linear"] = t.trajetoria_cursor_linear
     f["cliques_centro"] = t.cliques_no_centro
+    f["toque"] = t.toque
+    f["toque_area"] = t.area_toque
     for d in Digitacao:
         f[f"digitacao_{d.value}"] = float(t.digitacao is d)
 
@@ -224,6 +226,21 @@ FEATURE_NAMES: tuple[str, ...] = tuple(
 )
 
 
+def upgrade_f1(features: Mapping[str, float | None]) -> FeatureVector:
+    """Bring a vector logged under feature set f1 up to f2.
+
+    f1 predates touch telemetry, so ``toque`` is inferred, by rule, from what f1 did
+    record: if clicks were measured, the pointer was a finger when the user agent is
+    a phone's and a mouse otherwise. ``toque_area`` cannot be inferred and stays
+    missing. This is the one place where a logged vector is amended after the fact.
+    """
+    out: FeatureVector = dict(features)
+    clicked = out.get("cliques_centro") is not None
+    out["toque"] = (1.0 if out.get("ua_movel") else 0.0) if clicked else None
+    out["toque_area"] = None
+    return {name: out.get(name) for name in FEATURE_NAMES}
+
+
 class MemoryStateStore:
     """Offline twin of the Redis store: same sorted-set semantics, plain dicts.
 
@@ -266,4 +283,5 @@ __all__ = [
     "ip_key",
     "state_queries",
     "state_writes",
+    "upgrade_f1",
 ]

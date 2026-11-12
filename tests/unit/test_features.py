@@ -77,3 +77,18 @@ def test_card_features_only_exist_with_a_card() -> None:
     assert "ev_cartao_10m" not in names
     names = {q.name for q in state_queries(_req(cartao_hash="k_1", evento="checkout"))}
     assert {"ev_cartao_10m", "cartoes_por_disp_24h", "cartoes_por_ip_1h"} <= names
+
+
+def test_touch_is_a_feature_and_f1_vectors_are_upgraded_by_rule() -> None:
+    from gandalf_features import upgrade_f1
+
+    tel = {**make_event()["telemetria"], "toque": 1.0, "area_toque": 24.5}
+    f = compute(_req(telemetria={**tel, "trajetoria_cursor_linear": None}), {}, NetworkInfo())
+    assert f["toque"] == 1.0 and f["toque_area"] == 24.5 and f["cursor_linear"] is None
+
+    old = {k: v for k, v in f.items() if k not in {"toque", "toque_area"}}
+    phone = upgrade_f1({**old, "ua_movel": 1.0, "cliques_centro": 0.0})
+    desk = upgrade_f1({**old, "ua_movel": 0.0, "cliques_centro": 0.1})
+    raw_http = upgrade_f1({**old, "ua_movel": 0.0, "cliques_centro": None})
+    assert (phone["toque"], desk["toque"], raw_http["toque"]) == (1.0, 0.0, None)
+    assert tuple(phone) == FEATURE_NAMES and phone["toque_area"] is None

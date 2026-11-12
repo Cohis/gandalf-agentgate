@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
@@ -17,8 +18,20 @@ from .enrich import Enricher
 from .pipeline import Engine
 from .policy import Policy
 from .rules import load_rules
-from .scoring import ModelError, load_scorer
+from .scoring import HeuristicScorer, ModelError, Scorer, load_scorer
 from .storage import NullStorage, PostgresStorage, Storage
+
+log = logging.getLogger("gandalf.engine")
+
+
+def _scorer_or_baseline(settings: Settings) -> Scorer:
+    """At start-up a model that cannot be used (wrong feature set, missing file) is
+    a warning, not an outage: the engine serves the hand-written baseline instead."""
+    try:
+        return load_scorer(settings.model_dir)
+    except (ModelError, OSError, KeyError, ValueError) as exc:
+        log.warning("active model refused, serving the baseline: %s", exc)
+        return HeuristicScorer()
 
 
 class ChallengeResult(BaseModel):
@@ -54,7 +67,7 @@ def create_app(
             storage=st,
             enricher=Enricher(),
             rules=load_rules(settings.rules_path),
-            scorer=load_scorer(settings.model_dir),
+            scorer=_scorer_or_baseline(settings),
             policy=Policy.load(settings.policy_path),
             ip_hmac_key=settings.ip_hmac_key,
         )

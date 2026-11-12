@@ -21,7 +21,7 @@ def test_ordinary_human_is_approved(harness: Harness) -> None:
     assert out["decisao"] == "aprovar" and out["acao"] == "nenhuma"
     assert out["ator"]["tipo"] == "humano"
     assert out["motivos"] == [] and out["regras_acionadas"] == []
-    assert out["versao_features"] == "f1" and out["modo_degradado"] is False
+    assert out["versao_features"] == "f2" and out["modo_degradado"] is False
 
 
 def test_raw_http_client_is_not_approved_and_says_why(harness: Harness) -> None:
