@@ -326,14 +326,17 @@ def main() -> None:
     )
     st = model.predict(xt)
 
-    # Generalisation to an attacker family never seen in training.
-    seen = train.filter(pl.col("nivel") != 2), valid.filter(pl.col("nivel") != 2)
-    blind = fit(*seen)
-    blind_thr = threshold_at_fpr(blind.predict(xy(seen[1])[0])[xy(seen[1])[1] == 0], TARGET_FPR)
-    l2 = test.filter(pl.col("nivel") == 2)
-    blind_recall = (
-        float((blind.predict(xy(l2)[0]) >= blind_thr).mean()) if l2.height else float("nan")
-    )
+    # Generalisation: for each attacker level, a model that never saw that level is
+    # trained and applied to it. This is the number that matters for a new attacker.
+    blind: dict[int, tuple[float, int]] = {}
+    for lv in sorted(int(v) for v in set(test["nivel"].to_list()) if v):
+        seen = train.filter(pl.col("nivel") != lv), valid.filter(pl.col("nivel") != lv)
+        m = fit(*seen)
+        xs, ys = xy(seen[1])
+        thr = threshold_at_fpr(m.predict(xs)[ys == 0], TARGET_FPR)
+        held = test.filter(pl.col("nivel") == lv)
+        blind[lv] = (float((m.predict(xy(held)[0]) >= thr).mean()), held.height)
+    blind_recall = blind.get(2, (float("nan"), 0))[0]
 
     stamp = time.strftime("%Y%m%d-%H%M")
     digest = hashlib.sha256(model.booster.model_to_string().encode()).hexdigest()[:6]
@@ -347,6 +350,7 @@ def main() -> None:
         "recall_teste": float((st[y_test == 1] >= desafiar).mean()),
         "fpr_teste": float((st[y_test == 0] >= desafiar).mean()),
         "recall_nivel2_sem_ver_nivel2": blind_recall,
+        "recall_sem_ver_o_nivel": {str(k): v[0] for k, v in blind.items()},
         "linhas": {"treino": train.height, "validacao": valid.height, "teste": test.height},
     }
     meta = {
@@ -433,9 +437,13 @@ def main() -> None:
         *evaluate("Com ritmo absoluto (descartado)", test, full_test, full_thr, rng),
         "## Generalização",
         "",
-        f"Treinando **sem nenhum exemplo do nível 2** e testando só no nível 2: detecção de "
-        f"**{blind_recall:.1%}** ({l2.height} eventos), com o limiar de {TARGET_FPR:.0%} de falso "
-        "positivo. É a medida de quanto o modelo pega um atacante que nunca viu.",
+        "Para cada nível de atacante, um modelo é treinado **sem nenhum exemplo daquele nível** "
+        f"e aplicado só a ele, com o limiar de {TARGET_FPR:.0%} de falso positivo. É a medida de "
+        "quanto o sistema pega um atacante que nunca viu.",
+        "",
+        "| Nível deixado de fora | Eventos no teste | Detectados sem ter visto |",
+        "|---|---|---|",
+        *[f"| {lv} | {n} | {r:.1%} |" for lv, (r, n) in blind.items()],
         "",
         "## O que o modelo usa (ganho)",
         "",

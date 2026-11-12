@@ -58,3 +58,11 @@ As medições com o modelo no caminho foram feitas com o notebook em perfil de e
 - **Acessibilidade continua sendo o ponto fraco.** No teste, 2 de 5 eventos do perfil leitor de tela e 1 de 6 do controle por voz foram sinalizados. As amostras são mínimas, mas a direção é ruim: quem não usa mouse nem toque se parece com um script.
 - **Toque emulado.** O toque dos humanos simulados e dos scripts vem do mesmo emulador, com tamanho de contato fixo. Por isso o tamanho do contato é registrado mas não entra no modelo.
 - **Gravações antigas de celular.** As feitas antes da telemetria de toque tiveram o toque deduzido por regra (`upgrade_f1`), não medido.
+
+## Atacante de nível 3: agente de IA local (12/nov/2026)
+
+- **O agente é um Qwen3.5 de 9B rodando no notebook**, não um agente comercial. Ele é lento (cerca de 2 s por ação na placa em velocidade normal) e conclui pouco: relatou sucesso em 45% de 150 sessões.
+- **O laço do agente é próprio.** A biblioteca browser-use não funcionou com esse modelo. O laço age como as bibliotecas comuns (clique no centro do elemento, valor escrito direto no campo), mas um agente que mova o mouse de verdade ou use visão computacional não está coberto.
+- **Ele é detectado pelo mesmo sinal que os scripts**: 100% dos cliques no centro exato e nenhum movimento de mouse. Por isso o modelo o pega mesmo sem nunca ter visto um exemplo dele. O resultado diz mais sobre o jeito de agir do laço do que sobre agentes de IA em geral.
+- **Seguiu a instrução escondida na página** em 23% dos eventos e nunca preencheu o campo honeypot.
+- **Parte das sessões rodou com a placa de vídeo em clock reduzido**, o que deixou os intervalos entre ações maiores. As features de velocidade absoluta estão fora do modelo justamente por isso.
