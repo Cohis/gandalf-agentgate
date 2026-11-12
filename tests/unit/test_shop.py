@@ -338,7 +338,7 @@ def test_invited_visitor_can_use_the_shop_and_tunnel_drops_tls_fingerprints(
     engine: FakeEngine,
 ) -> None:
     c = make(engine, recording=True, invite_code="montanha42", tunnel=True, behind_proxy=True)
-    c.base_url = httpx.URL("https://testserver")  # cookies are Secure behind the proxy
+    c.base_url = "https://testserver"  # cookies are Secure behind the proxy
     assert start(c, convite="montanha42").headers["location"] == "/gravar/tarefas"
     assert c.get("/").status_code == 200
     r = c.post(
