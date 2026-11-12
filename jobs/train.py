@@ -414,7 +414,8 @@ def main() -> None:
         "## Pessoas reais: uma de fora por vez",
         "",
         f"{real['perfil'].n_unique()} voluntários gravados "
-        f"({real['sessao_id'].n_unique()} sessões, {real.height} eventos). Para cada um, o modelo é retreinado **sem nenhuma sessão dessa "
+        f"({real['sessao_id'].n_unique()} sessões, {real.height} eventos). "
+        "Para cada um, o modelo é retreinado **sem nenhuma sessão dessa "
         "pessoa** e depois aplicado a ela. É a estimativa de falso positivo para alguém que o "
         "sistema nunca viu. O modelo final treina com cerca de três quartos das pessoas e "
         "usa as demais para escolher o limiar.",

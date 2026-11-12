@@ -26,7 +26,7 @@ Work in progress, built in phases. This table states what actually exists today.
 |---|---|---|
 | 1 | Skeleton: contracts, rule-based engine, shop, telemetry, dashboard, compose | **done and validated** |
 | 2 | Attackers 1 and 2, simulator, first LightGBM model, SHAP | **done** ([results, in Portuguese](docs/results/fase2.md)) |
-| 3 | Real AI agent (local LLM), recorded human sessions | to do |
+| 3 | Real AI agent (local LLM), recorded human sessions | **in progress**: real people recorded and a touch-aware model live ([results, in Portuguese](docs/results/fase3-toque-e-pessoas-reais.md)); the real AI agent is still to come |
 | 4 | Scale layer: embeddings, FAISS, HDBSCAN | to do |
 | 5 | Signed legitimate agent (Web Bot Auth) and passkey | to do |
 | 6 | IP reputation | to do |

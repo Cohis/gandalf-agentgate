@@ -26,7 +26,7 @@ Em construção, por fases. Esta tabela diz o que existe de verdade hoje.
 |---|---|---|
 | 1 | Esqueleto: contratos, motor com regras, loja, telemetria, painel, compose | **pronta e validada** |
 | 2 | Atacantes 1 e 2, simulador, primeiro modelo LightGBM, SHAP | **pronta** ([resultado](docs/results/fase2.md)) |
-| 3 | Agente de IA real (LLM local), sessões humanas gravadas | a fazer |
+| 3 | Agente de IA real (LLM local), sessões humanas gravadas | **em andamento**: pessoas reais gravadas e modelo com toque no ar ([resultado](docs/results/fase3-toque-e-pessoas-reais.md)); falta o agente de IA real |
 | 4 | Camada de escala: embeddings, FAISS, HDBSCAN | a fazer |
 | 5 | Agente legítimo assinado (Web Bot Auth) e passkey | a fazer |
 | 6 | Reputação de IP | a fazer |

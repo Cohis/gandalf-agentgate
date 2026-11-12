@@ -1,7 +1,7 @@
 {
-  "versao": "20261110-2358-09d0ec",
+  "versao": "20261112-0951-fc0c2f",
   "alvo": "automacao",
-  "versao_features": "f1",
+  "versao_features": "f2",
   "features": [
     "tel_coletada",
     "webdriver",
@@ -21,6 +21,7 @@
     "ritmo_p90_p50",
     "cursor_linear",
     "cliques_centro",
+    "toque",
     "digitacao_colada",
     "digitacao_constante",
     "digitacao_humana",
@@ -62,23 +63,23 @@
     "cartoes_por_ip_24h"
   ],
   "calibracao": {
-    "a": 1.275757588298427,
-    "b": -0.06368781943464268
+    "a": 2.536560861953307,
+    "b": 0.7141228919853275
   },
   "limiares": {
-    "desafiar": 0.261596828446116,
+    "desafiar": 0.2916003884902683,
     "negar": 0.99
   },
-  "arvores": 50,
+  "arvores": 8,
   "metricas": {
-    "pr_auc_teste": 1.0,
+    "pr_auc_teste": 0.9999659898649798,
     "recall_teste": 1.0,
-    "fpr_teste": 0.0,
+    "fpr_teste": 0.015306122448979591,
     "recall_nivel2_sem_ver_nivel2": 0.0,
     "linhas": {
-      "treino": 1017,
-      "validacao": 358,
-      "teste": 345
+      "treino": 1495,
+      "validacao": 507,
+      "teste": 438
     }
   }
 }

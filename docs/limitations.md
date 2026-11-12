@@ -49,3 +49,12 @@ O banco não guarda o IP cru nem o user-agent completo, por decisão de privacid
 ## Medições de latência
 
 As medições com o modelo no caminho foram feitas com o notebook em perfil de economia de energia e com outras aplicações em uso, e não são comparáveis com as da fase 1. Nas mesmas condições, com e sem modelo, a diferença foi de cerca de 0,5 ms na mediana.
+
+## Pessoas reais e celular (12/nov/2026)
+
+- **O que as gravações mostraram.** Um modelo treinado só com humanos simulados barrava 10,4% dos eventos de voluntários reais, todos de quem usava celular: no toque não há trajetória de cursor, e isso era o principal sinal de script. Com telemetria de toque e pessoas reais no treino, a estimativa deixando uma pessoa de fora por vez foi de 0 em 200 eventos (11 voluntários).
+- **Onze pessoas não são a população.** São conhecidos de uma só rede de contatos, e 0 em 200 não significa taxa zero.
+- **O modelo agora depende de um sinal só.** 88% do ganho vem de `cliques_centro`: scripts clicam no centro exato dos elementos. Um script que sorteie a posição do clique dentro do botão derruba a detecção. Esse é o atacante de nível 4.
+- **Acessibilidade continua sendo o ponto fraco.** No teste, 2 de 5 eventos do perfil leitor de tela e 1 de 6 do controle por voz foram sinalizados. As amostras são mínimas, mas a direção é ruim: quem não usa mouse nem toque se parece com um script.
+- **Toque emulado.** O toque dos humanos simulados e dos scripts vem do mesmo emulador, com tamanho de contato fixo. Por isso o tamanho do contato é registrado mas não entra no modelo.
+- **Gravações antigas de celular.** As feitas antes da telemetria de toque tiveram o toque deduzido por regra (`upgrade_f1`), não medido.
