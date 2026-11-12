@@ -66,3 +66,12 @@ As medições com o modelo no caminho foram feitas com o notebook em perfil de e
 - **Ele é detectado pelo mesmo sinal que os scripts**: 100% dos cliques no centro exato e nenhum movimento de mouse. Por isso o modelo o pega mesmo sem nunca ter visto um exemplo dele. O resultado diz mais sobre o jeito de agir do laço do que sobre agentes de IA em geral.
 - **Seguiu a instrução escondida na página** em 23% dos eventos e nunca preencheu o campo honeypot.
 - **Parte das sessões rodou com a placa de vídeo em clock reduzido**, o que deixou os intervalos entre ações maiores. As features de velocidade absoluta estão fora do modelo justamente por isso.
+
+## Modelo de fraude e decisão por custo (12/nov/2026)
+
+- **A fraude humana é simulada.** Os fraudadores usam trajetórias de mouse reais, mas os roteiros (abuso de cupom, teste de cartão, conta roubada) são meus. Nenhum fraudador real participou.
+- **Os limiares dependem de uma suposição**: que 2% do tráfego real seja fraude (`prevalencia_fraude` no `policy.yaml`). Com outra taxa, os limiares mudam. Os custos também são escolhas de política, não medidas.
+- **`valor` é o sinal mais usado (39% do ganho).** Testadores de cartão compram o item de R$ 4,90 e abusadores de cupom compram o que o cupom cobre. Um fraudador que compre itens de valor comum perde esse sinal.
+- **Conta roubada é o cenário mais difícil (62% sinalizado)**: o login de um cliente que trocou de aparelho ou viajou se parece com o de quem roubou a senha. É exatamente o caso em que o desafio é a confirmação fora da sessão, e não a negação.
+- **Fricção para pessoas honestas.** Com esses custos, cerca de 7% dos eventos de pessoas honestas simuladas recebem um pedido de confirmação (nenhum é negado), a maioria em logins. É o preço que a política aceita para pegar a fraude humana.
+- **Pessoas reais no modelo de fraude**: 3,5% de 200 eventos seriam desafiados, mas três quartos dessas pessoas estavam no treino, então o número é otimista.

@@ -105,9 +105,8 @@ async def run_fraudster(
     # teste_cartao_manual (also the fallback when there is no account to steal yet)
     ident = identity(rng)
     await f.signup(ident)
+    who[0] = fraud  # from here on, every step serves the card test
     for _ in range(rng.randint(3, 6)):
         await f.add(CHEAP)
-        who[0] = fraud
         await f.pay(test_card(rng, valid=rng.random() < 0.35), coupon=False)
-        who[0] = benign
     return ident

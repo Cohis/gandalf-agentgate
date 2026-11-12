@@ -167,8 +167,10 @@ def main() -> None:
         (f"Atacante nível {lv}", (nivel == lv) & (yt == 1))
         for lv in sorted(set(nivel[yt == 1]) - {0})
     ]
+    fraudster = np.char.startswith(perfil.astype(str), "fraude_")
     groups += [
-        ("Pessoas honestas, simuladas", (yt == 0) & ~test["real"].to_numpy()),
+        ("Pessoas honestas, simuladas", (yt == 0) & ~test["real"].to_numpy() & ~fraudster),
+        ("Passos não fraudulentos de fraudadores", (yt == 0) & fraudster),
         ("Pessoas reais gravadas", (yt == 0) & test["real"].to_numpy()),
     ]
 
