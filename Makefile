@@ -35,9 +35,10 @@ load-burst:      ## worst case: 200 clients firing in the same instant, every se
 	uv run locust -f loadtest/locustfile.py --headless -H http://127.0.0.1:8010 \
 		-u 200 -r 200 -t 30s --only-summary
 
-simulate:        ## labelled lab traffic: people + attackers 1 and 2 (shop in shadow mode)
-	SHOP_SHADOW=1 docker compose up -d --wait shop proxy
-	uv run python -m simulator.run --humans 300 --l1 110 --l2 150 --days 6 --concurrency 12 --run $(RUN)
+simulate:        ## labelled lab traffic on a private shop (port 8444); the public shop is untouched
+	docker compose --profile sim up -d --build --wait shop-sim proxy-sim
+	LAB_SHOP_URL=https://localhost:8444 uv run python -m simulator.run \
+		--humans 360 --l1 100 --l2 150 --days 6 --concurrency 8 --run $(RUN)
 
 labels:          ## deliver a run's answer key to the engine: make labels RUN=<name>
 	uv run python -m simulator.labels data/runs/$(RUN).jsonl

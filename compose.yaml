@@ -90,6 +90,39 @@ services:
     volumes: ["certs:/certs"]
     mem_limit: 64m
 
+  # A second, private shop for the traffic generators (`--profile sim`). It lets the
+  # simulation run in shadow mode with lab headers while the public shop stays
+  # invitation-only for real volunteers. Both talk to the same engine.
+  shop-sim:
+    profiles: [sim]
+    build: { context: ., dockerfile: docker/shop.Dockerfile }
+    environment:
+      <<: *keys
+      SHOP_ENGINE_URL: http://engine:8000
+      SHOP_CARD_HMAC_KEY: ${SHOP_CARD_HMAC_KEY:-dev-only-change-me}
+      SHOP_BEHIND_PROXY: "1"
+      SHOP_LAB_MODE: "1"
+      SHOP_SHADOW: "1"
+    depends_on:
+      engine: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/saude', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    mem_limit: 200m
+
+  proxy-sim:
+    profiles: [sim]
+    build: { context: ., dockerfile: docker/proxy.Dockerfile }
+    environment:
+      FORWARD_URL: http://shop-sim:8080
+    depends_on:
+      shop-sim: { condition: service_healthy }
+    ports: ["127.0.0.1:8444:8443"]
+    volumes: ["certs-sim:/certs"]
+    mem_limit: 64m
+
   dashboard:
     build: { context: ., dockerfile: docker/dashboard.Dockerfile }
     environment:
@@ -102,3 +135,4 @@ services:
 volumes:
   pgdata:
   certs:
+  certs-sim:
