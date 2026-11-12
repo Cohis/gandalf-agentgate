@@ -200,6 +200,13 @@ def evaluate(name: str, test: pl.DataFrame, scores: np.ndarray, thr: float, rng)
         m = nivel == lv
         out.append(rate_row(f"Atacante nível {lv} (detecção)", flagged[m], sess[m], rng))
     out.append(rate_row("Humanos, todos (falso positivo)", flagged[y == 0], sess[y == 0], rng))
+    real = (y == 0) & np.char.startswith(perfil.astype(str), "real_")
+    if real.any():
+        sim = (y == 0) & ~real
+        out.append(
+            rate_row("Humanos REAIS gravados (falso positivo)", flagged[real], sess[real], rng)
+        )
+        out.append(rate_row("Humanos simulados (falso positivo)", flagged[sim], sess[sim], rng))
     for pf in sorted(set(perfil[y == 0])):
         m = (y == 0) & (perfil == pf)
         out.append(rate_row(f"Humano: {pf} (falso positivo)", flagged[m], sess[m], rng))
