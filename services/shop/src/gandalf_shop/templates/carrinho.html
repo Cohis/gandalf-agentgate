@@ -1,19 +1,41 @@
 {% extends "base.html" %}
-{% block titulo %}Carrinho · Loja da Montanha{% endblock %}
+{% from "_macros.html" import ico %}
+{% block titulo %}Carrinho | Loja da Montanha{% endblock %}
 {% block conteudo %}
 <h1>Carrinho</h1>
 {% if linhas %}
-<table>
-  <thead><tr><th>Produto</th><th>Qtd.</th><th>Subtotal</th></tr></thead>
-  <tbody>
-  {% for l in linhas %}
-    <tr><td>{{ l.nome }}</td><td>{{ l.qtd }}</td><td>R$ {{ "%.2f"|format(l.subtotal) }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-<p><strong>Total: R$ {{ "%.2f"|format(total) }}</strong></p>
-<p><a href="/checkout">Finalizar compra</a></p>
+<div class="duas secao">
+  <ul class="cartao itens">
+    {% for l in linhas %}
+    <li class="item">
+      <img src="/static/img/{{ l.pid }}.jpg" alt="" width="84" height="84">
+      <div>
+        <a class="nome" href="/produto/{{ l.pid }}">{{ l.nome }}</a>
+        <p class="muted">{{ l.qtd }} x R$ {{ l.preco|brl }}</p>
+        <form method="post" action="/carrinho/remover">
+          <input type="hidden" name="pid" value="{{ l.pid }}">
+          <button class="link" type="submit">{{ ico("trash") }} Remover</button>
+        </form>
+      </div>
+      <span class="sub">R$ {{ l.subtotal|brl }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  <aside class="cartao resumo">
+    <h2>Resumo</h2>
+    <div class="linha"><span>Produtos</span><span>R$ {{ total|brl }}</span></div>
+    <div class="linha"><span>Frete</span><span class="frete-gratis">Grátis</span></div>
+    <div class="linha total"><span>Total</span><span>R$ {{ total|brl }}</span></div>
+    <a class="botao largo" href="/checkout">Finalizar compra</a>
+    <a class="botao secundario largo" href="/">Continuar comprando</a>
+  </aside>
+</div>
 {% else %}
-<p>Seu carrinho está vazio. <a href="/">Ver o catálogo</a></p>
+<div class="cartao vazio secao">
+  {{ ico("shopping-cart") }}
+  <h2>Seu carrinho está vazio</h2>
+  <p class="muted">Adicione produtos para vê-los aqui.</p>
+  <a class="botao" href="/">Ver o catálogo</a>
+</div>
 {% endif %}
 {% endblock %}

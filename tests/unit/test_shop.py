@@ -351,3 +351,41 @@ def test_invited_visitor_can_use_the_shop_and_tunnel_drops_tls_fingerprints(
     assert call["ja4"] is None and call["http2_fingerprint"] is None  # they were the tunnel's
     assert call["ip"].startswith("187.")  # the participant's fictional address, nothing else
     assert engine.labels[0]["perfil"] == "real_P1"
+
+
+# ------------------------------------------------------------------ storefront
+
+
+def test_search_ignores_accents_and_case_and_category_filters(engine: FakeEngine) -> None:
+    c = make(engine)
+    hits = c.get("/?q=xicara").text
+    assert "Xícara para Cappuccino" in hits and "Xícara de Porcelana" in hits
+    assert "Mel Silvestre" not in hits and "3 produtos" in hits  # the tea mentions a cup too
+    moda = c.get("/?categoria=moda").text
+    assert "Sapato Oxford" in moda and "Mel Silvestre" not in moda
+    assert "Nada encontrado" in c.get("/?q=dragao").text
+    assert c.get("/?categoria=nao-existe").status_code == 200  # unknown category: full catalogue
+
+
+def test_every_product_has_a_page_a_photo_and_an_add_to_cart_form(engine: FakeEngine) -> None:
+    from gandalf_shop.app import _HERE, PRODUCTS
+
+    c = make(engine)
+    home = c.get("/").text
+    for pid, p in PRODUCTS.items():
+        assert (_HERE / "static" / "img" / f"{pid}.jpg").is_file()
+        assert f'href="/produto/{pid}"' in home
+        page = c.get(f"/produto/{pid}")
+        assert page.status_code == 200 and f'name="pid" value="{pid}"' in page.text
+        assert p["nome"] in page.text.replace("&#39;", "'")
+
+
+def test_cart_shows_formatted_totals_and_items_can_be_removed(engine: FakeEngine) -> None:
+    c = make(engine)
+    for pid in ("p5", "p5", "p2"):
+        c.post("/carrinho/adicionar", data={"pid": pid})
+    cart = c.get("/carrinho").text
+    assert "R$ 1.987,00" in cart  # 2 x 899,00 + 189,00, Brazilian format
+    assert c.post("/carrinho/remover", data={"pid": "p5"}).status_code == 303
+    cart = c.get("/carrinho").text
+    assert "R$ 189,00" in cart and "Tênis" not in cart

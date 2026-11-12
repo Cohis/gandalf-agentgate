@@ -1,8 +1,12 @@
 {% extends "base.html" %}
-{% block titulo %}Sobre · Loja da Montanha{% endblock %}
+{% block titulo %}Sobre | Loja da Montanha{% endblock %}
 {% block conteudo %}
-<h1>Sobre a loja</h1>
-<p>Esta é uma loja de laboratório. Ela existe para que o motor de risco Gandalf tenha
-um alvo legítimo: todo o tráfego de ataque do projeto é dirigido apenas a ela.</p>
-<p>Trocas em até 30 dias. Frete grátis acima de R$ 200,00.</p>
+<div class="cartao media">
+  <h1>Sobre a loja</h1>
+  <p>Esta é uma loja de laboratório. Ela existe para que o motor de risco Gandalf tenha um alvo
+  legítimo: todo o tráfego de teste do projeto é dirigido apenas a ela.</p>
+  <p>Nenhum produto é enviado e nenhum cartão é cobrado. Trocas em até 30 dias e frete grátis acima de
+  R$ {{ frete_gratis_de|brl }} fazem parte do cenário.</p>
+  <p><a href="/">Voltar ao catálogo</a></p>
+</div>
 {% endblock %}

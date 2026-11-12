@@ -1,13 +1,39 @@
 {% extends "base.html" %}
-{% block titulo %}{{ p.nome }} · Loja da Montanha{% endblock %}
+{% from "_macros.html" import ico, estrelas, preco, cartao_produto %}
+{% block titulo %}{{ p.nome }} | Loja da Montanha{% endblock %}
 {% block conteudo %}
-<h1>{{ p.nome }}</h1>
-<p>R$ {{ "%.2f"|format(p.preco) }} · <span class="muted">{{ p.estoque }} em estoque</span></p>
-<p>Feito à mão nas oficinas da Montanha. Envio para todo o Brasil.</p>
-<form method="post" action="/carrinho/adicionar">
-  <input type="hidden" name="pid" value="{{ pid }}">
-  <input type="hidden" name="telemetria" value="">
-  <button type="submit">Adicionar ao carrinho</button>
-</form>
-<p><a href="/">Voltar ao catálogo</a></p>
+<p class="migalhas"><a href="/">Início</a> / <a href="/?categoria={{ p.categoria }}">{{ categorias[p.categoria] }}</a></p>
+<article class="cartao pdp">
+  <div class="foto"><img src="/static/img/{{ pid }}.jpg" alt="{{ p.nome }}" width="640" height="640"></div>
+  <div class="info">
+    <h1>{{ p.nome }}</h1>
+    {{ estrelas(p.nota, p.avaliacoes) }}
+    {{ preco(p) }}
+    <p class="parcela">em até 3x de R$ {{ (p.preco / 3)|brl }} sem juros</p>
+    {% if p.preco >= frete_gratis_de %}<p class="frete-gratis">Frete grátis para todo o Brasil</p>{% endif %}
+    <p class="descricao">{{ p.descricao }}</p>
+  </div>
+  <aside class="caixa-compra">
+    {% if p.estoque <= 10 %}
+    <p class="pouco">Restam {{ p.estoque }} unidades</p>
+    {% else %}
+    <p class="estoque">Em estoque</p>
+    {% endif %}
+    <form method="post" action="/carrinho/adicionar">
+      <input type="hidden" name="pid" value="{{ pid }}">
+      <input type="hidden" name="telemetria" value="">
+      <button class="largo" type="submit">Adicionar ao carrinho</button>
+    </form>
+    <div class="linha">{{ ico("truck") }} <span>Entrega em 3 a 7 dias úteis</span></div>
+    <div class="linha">{{ ico("package") }} <span>Troca grátis em até 30 dias</span></div>
+    <div class="linha">{{ ico("shield-check") }} <span>Compra protegida</span></div>
+  </aside>
+</article>
+
+<section class="secao">
+  <h2>Você também pode gostar</h2>
+  <ul class="ofertas">
+    {% for rid, r in relacionados.items() %}{{ cartao_produto(rid, r, frete_gratis_de) }}{% endfor %}
+  </ul>
+</section>
 {% endblock %}

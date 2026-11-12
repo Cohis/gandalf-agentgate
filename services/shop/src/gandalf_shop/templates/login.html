@@ -1,13 +1,15 @@
 {% extends "base.html" %}
-{% block titulo %}Entrar · Loja da Montanha{% endblock %}
+{% block titulo %}Entrar | Loja da Montanha{% endblock %}
 {% block conteudo %}
-<h1>Entrar</h1>
-{% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
-<form class="pilha" method="post" action="/login">
-  <label>E-mail <input type="email" name="email" autocomplete="email" required></label>
-  <label>Senha <input type="password" name="senha" autocomplete="current-password" required></label>
-  {% include "_armadilhas.html" %}
-  <button type="submit">Entrar</button>
-</form>
-<p>Ainda não tem conta? <a href="/cadastro">Criar conta</a></p>
+<div class="cartao estreita">
+  <h1>Entrar</h1>
+  {% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+  <form class="pilha" method="post" action="/login">
+    <label>E-mail <input type="email" name="email" autocomplete="email" required></label>
+    <label>Senha <input type="password" name="senha" autocomplete="current-password" required></label>
+    {% include "_armadilhas.html" %}
+    <button class="largo" type="submit">Entrar</button>
+  </form>
+  <p class="muted">Ainda não tem conta? <a href="/cadastro">Criar conta</a></p>
+</div>
 {% endblock %}

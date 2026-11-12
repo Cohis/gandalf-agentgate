@@ -1,0 +1,42 @@
+{% macro ico(nome) %}<span class="ico" aria-hidden="true">{% include "icons/" ~ nome ~ ".svg" %}</span>{% endmacro %}
+
+{% macro estrelas(nota, avaliacoes) %}
+<span class="nota" title="Nota {{ "%.1f"|format(nota) }} de 5">
+  <span class="estrelas" aria-hidden="true">
+    {% for _ in range(5) %}{% include "icons/star-fill.svg" %}{% endfor %}
+    <span class="cheias" style="width: {{ (nota / 5 * 100)|round(1) }}%">
+      {% for _ in range(5) %}{% include "icons/star-fill.svg" %}{% endfor %}
+    </span>
+  </span>
+  <span>{{ "%.1f"|format(nota)|replace(".", ",") }} ({{ avaliacoes }})</span>
+</span>
+{% endmacro %}
+
+{% macro preco(p) %}
+<div class="preco">
+  <span class="valor">R$ {{ p.preco|brl }}</span>
+  {% if p.antes %}
+  <span class="antes">R$ {{ p.antes|brl }}</span>
+  <span class="off">{{ ((1 - p.preco / p.antes) * 100)|round|int }}% off</span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro cartao_produto(pid, p, frete_gratis_de) %}
+<li class="produto">
+  <a class="foto" href="/produto/{{ pid }}" tabindex="-1" aria-hidden="true">
+    <img src="/static/img/{{ pid }}.jpg" alt="" width="640" height="640" loading="lazy">
+  </a>
+  <div class="corpo">
+    <h3><a href="/produto/{{ pid }}">{{ p.nome }}</a></h3>
+    {{ estrelas(p.nota, p.avaliacoes) }}
+    {{ preco(p) }}
+    {% if p.preco >= frete_gratis_de %}<span class="frete-gratis">Frete grátis</span>{% endif %}
+    <form method="post" action="/carrinho/adicionar">
+      <input type="hidden" name="pid" value="{{ pid }}">
+      <input type="hidden" name="telemetria" value="">
+      <button type="submit">Adicionar ao carrinho</button>
+    </form>
+  </div>
+</li>
+{% endmacro %}

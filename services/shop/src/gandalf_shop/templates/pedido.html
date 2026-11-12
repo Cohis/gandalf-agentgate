@@ -1,8 +1,12 @@
 {% extends "base.html" %}
-{% block titulo %}Pedido confirmado · Loja da Montanha{% endblock %}
+{% from "_macros.html" import ico %}
+{% block titulo %}Pedido confirmado | Loja da Montanha{% endblock %}
 {% block conteudo %}
-<h1>Pedido confirmado</h1>
-<p>Total cobrado: <strong>R$ {{ "%.2f"|format(total) }}</strong>
-{% if cupom_aplicado %}(cupom de primeira compra aplicado){% endif %}</p>
-<p><a href="/">Voltar ao catálogo</a></p>
+<div class="cartao media">
+  <h1>Pedido confirmado</h1>
+  <p>Total cobrado: <strong>R$ {{ total|brl }}</strong>
+  {% if cupom_aplicado %}(cupom de primeira compra aplicado){% endif %}</p>
+  <p class="muted">Entrega prevista em 3 a 7 dias úteis.</p>
+  <p><a class="botao" href="/">Voltar ao catálogo</a></p>
+</div>
 {% endblock %}

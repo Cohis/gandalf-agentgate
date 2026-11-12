@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% block titulo %}Participar da pesquisa · Loja da Montanha{% endblock %}
+{% block titulo %}Participar da pesquisa | Loja da Montanha{% endblock %}
 {% block conteudo %}
+<div class="cartao media">
 <h1>Participar da pesquisa</h1>
 <p>Esta é uma <strong>loja de mentira</strong>, parte de um projeto de estudo sobre como diferenciar
 pessoas de robôs em sites. Nada é vendido e nenhum pagamento acontece.</p>
@@ -39,9 +40,10 @@ informe o seu código a quem lhe convidou.</p>
   {% endif %}
   <label>Seu código de participante (o mesmo sempre que voltar)
     <input type="text" name="codigo" placeholder="P1" maxlength="8" required autocomplete="off"></label>
-  <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
-    <input type="checkbox" name="aceito" value="sim" required style="width:auto;">
+  <label class="aceite">
+    <input type="checkbox" name="aceito" value="sim" required>
     Li o texto acima e concordo em participar.</label>
   <button type="submit">Começar</button>
 </form>
+</div>
 {% endblock %}

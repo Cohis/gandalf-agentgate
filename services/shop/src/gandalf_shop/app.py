@@ -17,6 +17,7 @@ import logging
 import os
 import secrets
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
@@ -34,14 +35,165 @@ from pydantic import ValidationError
 log = logging.getLogger("gandalf.shop")
 _HERE = Path(__file__).parent
 
-PRODUCTS: dict[str, dict[str, Any]] = {
-    "p1": {"nome": "Caneca Mithril", "preco": 49.90, "estoque": 120},
-    "p2": {"nome": "Cajado de Viagem", "preco": 189.00, "estoque": 40},
-    "p3": {"nome": "Mapa da Montanha", "preco": 24.90, "estoque": 300},
-    "p4": {"nome": "Lanterna de Élfos", "preco": 129.00, "estoque": 60},
-    "p5": {"nome": "Tênis Edição Limitada", "preco": 899.00, "estoque": 5},  # scalping bait
-    "p6": {"nome": "Chá da Tarde", "preco": 4.90, "estoque": 999},  # card-testing bait
+
+def _p(nome: str, preco: float, cat: str, estoque: int, nota: float, aval: int, desc: str,
+       antes: float | None = None) -> dict[str, Any]:  # fmt: skip
+    return {
+        "nome": nome, "preco": preco, "categoria": cat, "estoque": estoque, "nota": nota,
+        "avaliacoes": aval, "descricao": desc, "antes": antes,
+    }  # fmt: skip
+
+
+CATEGORIES: dict[str, str] = {
+    "casa": "Casa e decoração",
+    "cozinha": "Cozinha",
+    "mercearia": "Mercearia",
+    "moda": "Moda",
+    "papelaria": "Papelaria",
 }
+# Ratings and review counts are invented: this is a lab shop with no real customers.
+# Ids and prices of p1, p3, p5 and p6 are relied on by the attack scenarios.
+PRODUCTS: dict[str, dict[str, Any]] = {
+    "p1": _p(
+        "Xícara para Cappuccino 250 ml",
+        49.90,
+        "cozinha",
+        120,
+        4.7,
+        312,
+        "Cerâmica esmaltada com pires. Vai ao micro-ondas e à lava-louças.",
+        antes=64.90,
+    ),
+    "p2": _p(
+        "Sapato Oxford de Couro",
+        189.00,
+        "moda",
+        40,
+        4.4,
+        87,
+        "Couro legítimo, solado de borracha e palmilha acolchoada.",
+        antes=239.00,
+    ),
+    "p3": _p(
+        "Pôster Mapa Antigo de Londres",
+        24.90,
+        "casa",
+        300,
+        4.8,
+        541,
+        "Reprodução de um mapa de 1750 em papel fosco 30 x 40 cm.",
+    ),
+    "p4": _p(
+        "Lanterna de Jardim em Pedra",
+        129.00,
+        "casa",
+        60,
+        4.5,
+        64,
+        "Esculpida em pedra, para vela ou LED. Resiste a chuva e sol.",
+    ),
+    # scalping bait: scarce and expensive
+    "p5": _p(
+        "Tênis Casual Edição Limitada",
+        899.00,
+        "moda",
+        5,
+        4.9,
+        1203,
+        "Lote numerado, cabedal em couro e cadarço encerado.",
+    ),
+    # card-testing bait: the cheapest thing in the shop
+    "p6": _p(
+        "Chá Verde Sachê Individual",
+        4.90,
+        "mercearia",
+        999,
+        4.3,
+        958,
+        "Um sachê de chá verde para uma xícara de 200 ml.",
+    ),
+    "p7": _p(
+        "Mochila Estampada 20 L",
+        149.00,
+        "moda",
+        75,
+        4.6,
+        229,
+        "Tecido resistente à água, alças acolchoadas e bolso para notebook.",
+        antes=179.00,
+    ),
+    "p8": _p(
+        "Caderno Pautado com Caneta",
+        39.90,
+        "papelaria",
+        210,
+        4.6,
+        176,
+        "Capa dura, 160 páginas pautadas e caneta esferográfica.",
+    ),
+    "p9": _p(
+        "Gravura Botânica Girassóis",
+        59.90,
+        "casa",
+        90,
+        4.2,
+        41,
+        "Impressão em papel algodão 21 x 30 cm, pronta para emoldurar.",
+    ),
+    "p10": _p(
+        "Lanterna Decorativa Vermelha",
+        79.90,
+        "casa",
+        150,
+        4.4,
+        133,
+        "Tecido sobre armação de arame, com cordão para pendurar.",
+        antes=99.90,
+    ),
+    "p11": _p(
+        "Xícara de Porcelana com Pires",
+        34.90,
+        "cozinha",
+        180,
+        4.5,
+        268,
+        "Porcelana branca, 180 ml. Clássica para chá da tarde.",
+    ),
+    "p12": _p(
+        "Mel Silvestre 300 g",
+        32.90,
+        "mercearia",
+        140,
+        4.8,
+        407,
+        "Mel puro de florada silvestre, em pote de vidro com tampa.",
+    ),
+}
+FREE_SHIPPING_FROM = 200.0
+
+
+def brl(value: float) -> str:
+    """1234.5 -> '1.234,50' (Brazilian money format)."""
+    return f"{value:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+
+
+def _fold(text: str) -> str:
+    """Lower-case and strip accents, so 'xicara' finds 'Xícara'."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn"
+    )
+
+
+def catalogue(q: str = "", categoria: str = "") -> dict[str, dict[str, Any]]:
+    words = _fold(q).split()
+    return {
+        pid: p
+        for pid, p in PRODUCTS.items()
+        if (not categoria or p["categoria"] == categoria)
+        and all(w in _fold(p["nome"] + " " + p["descricao"]) for w in words)
+    }
+
+
 COUPON = "PRIMEIRA10"
 COUPON_OFF = 10.0
 CANARY_TOKEN = "lumen-7"  # noqa: S105 - not a secret, it is the canary marker
@@ -176,6 +328,7 @@ def create_app(
     app = FastAPI(title="Loja de laboratório", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=_HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=_HERE / "templates")
+    tpl.env.filters["brl"] = brl
     client = http or httpx.AsyncClient(base_url=s.engine_url, timeout=s.engine_timeout_s)
 
     sessions: dict[str, Session] = {}
@@ -235,7 +388,15 @@ def create_app(
         resp = tpl.TemplateResponse(
             request,
             name,
-            {"conta": account, "itens_carrinho": sum(sess.cart.values()), "canario": CANARY_TOKEN}
+            {
+                "conta": account,
+                "itens_carrinho": sum(sess.cart.values()),
+                "canario": CANARY_TOKEN,
+                "categorias": CATEGORIES,
+                "frete_gratis_de": FREE_SHIPPING_FROM,
+                "q": "",
+                "categoria": "",
+            }
             | ctx,
             status_code=status,
         )
@@ -344,14 +505,28 @@ def create_app(
     # ---------------------------------------------------------------- pages
 
     @app.get("/", response_class=HTMLResponse)
-    async def home(request: Request) -> Response:
-        return render(request, "home.html", produtos=PRODUCTS)
+    async def home(request: Request, q: str = "", categoria: str = "") -> Response:
+        q = q.strip()[:60]
+        categoria = categoria if categoria in CATEGORIES else ""
+        ofertas = {pid: p for pid, p in PRODUCTS.items() if p["antes"]}
+        return render(
+            request,
+            "home.html",
+            produtos=catalogue(q, categoria),
+            ofertas=ofertas,
+            q=q,
+            categoria=categoria,
+        )
 
     @app.get("/produto/{pid}", response_class=HTMLResponse)
     async def product(request: Request, pid: str) -> Response:
         if pid not in PRODUCTS:
             return render(request, "negado.html", status=404, titulo="Produto não encontrado")
-        return render(request, "produto.html", pid=pid, p=PRODUCTS[pid])
+        p = PRODUCTS[pid]
+        same = [k for k, v in PRODUCTS.items() if v["categoria"] == p["categoria"] and k != pid]
+        rest = [k for k in PRODUCTS if k != pid and k not in same]
+        relacionados = {k: PRODUCTS[k] for k in (same + rest)[:4]}
+        return render(request, "produto.html", pid=pid, p=p, relacionados=relacionados)
 
     @app.get("/sobre", response_class=HTMLResponse)
     async def about(request: Request) -> Response:
@@ -443,6 +618,13 @@ def create_app(
             for pid, q in sess.cart.items()
         ]
         return lines, round(sum(ln["subtotal"] for ln in lines), 2)
+
+    @app.post("/carrinho/remover")
+    async def remove_from_cart(
+        request: Request, pid: Annotated[str, Form(max_length=8)]
+    ) -> Response:
+        session_of(request)[1].cart.pop(pid, None)
+        return RedirectResponse("/carrinho", status_code=303)
 
     @app.get("/carrinho", response_class=HTMLResponse)
     async def cart(request: Request) -> Response:

@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% block titulo %}Sua tarefa · Loja da Montanha{% endblock %}
+{% block titulo %}Sua tarefa | Loja da Montanha{% endblock %}
 {% block conteudo %}
 {# A new recorded session must not inherit the previous one's rhythm. Runs before the
    deferred telemetry script reads its carried state. #}
 <script>try { sessionStorage.removeItem("gandalf_t"); } catch (e) {}</script>
+<div class="cartao media">
 <h1>Sessão {{ gravacao.n }}</h1>
 <p>Use a loja como usaria qualquer loja online, <strong>do seu jeito e sem pressa</strong>.
 Não existe jeito certo. Sugestão para esta sessão:</p>
 {% set tarefa = (gravacao.n - 1) % 6 %}
-<div class="cartao">
+<div class="tarefa">
 {% if tarefa == 0 %}
   <p><strong>Crie uma conta</strong> (dados inventados) e <strong>compre alguma coisa</strong> que achar
   interessante, usando o cupom <strong>PRIMEIRA10</strong>.</p>
@@ -30,10 +31,11 @@ Não existe jeito certo. Sugestão para esta sessão:</p>
 </div>
 <p>Na hora de pagar, use este <strong>cartão de teste</strong>: <code>4242 4242 4242 4242</code></p>
 <p>Quando terminar, clique em <strong>Encerrar esta sessão</strong>, na faixa amarela no topo.</p>
-<p><a href="/"><strong>Ir para a loja</strong></a></p>
+<p><a class="botao" href="/">Ir para a loja</a></p>
 <hr>
 <form method="post" action="/gravar/encerrar">
   <input type="hidden" name="fim" value="sim">
   <button class="link" type="submit">Já fiz todas as minhas sessões, quero terminar</button>
 </form>
+</div>
 {% endblock %}

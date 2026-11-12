@@ -1,9 +1,11 @@
 {% extends "base.html" %}
-{% block titulo %}Confirme que é você · Loja da Montanha{% endblock %}
+{% block titulo %}Confirme que é você | Loja da Montanha{% endblock %}
 {% block conteudo %}
-<h1>Confirme que é você</h1>
-<p>Para continuar, precisamos de uma confirmação no seu aparelho (passkey).</p>
-<p class="muted">Código da verificação: {{ desafio_id }}</p>
-<p class="muted">A confirmação por passkey entra na fase 5 do projeto; por enquanto a ação fica retida.</p>
-<p><a href="/">Voltar ao catálogo</a></p>
+<div class="cartao media">
+  <h1>Confirme que é você</h1>
+  <p>Para continuar, precisamos de uma confirmação no seu aparelho (passkey).</p>
+  <p class="muted">Código da verificação: {{ desafio_id }}</p>
+  <p class="muted">A confirmação por passkey entra na fase 5 do projeto. Por enquanto a ação fica retida.</p>
+  <p><a href="/">Voltar ao catálogo</a></p>
+</div>
 {% endblock %}

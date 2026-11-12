@@ -1,19 +1,44 @@
 {% extends "base.html" %}
+{% from "_macros.html" import cartao_produto %}
 {% block conteudo %}
-<h1>Catálogo</h1>
-<p class="muted">Primeira compra? Use o cupom <strong>PRIMEIRA10</strong> e ganhe R$ 10,00 de desconto.</p>
-<ul class="grade">
-  {% for pid, p in produtos.items() %}
-  <li class="cartao">
-    <h2><a href="/produto/{{ pid }}">{{ p.nome }}</a></h2>
-    <p>R$ {{ "%.2f"|format(p.preco) }}</p>
-    <p class="muted">{{ p.estoque }} em estoque</p>
-    <form method="post" action="/carrinho/adicionar">
-      <input type="hidden" name="pid" value="{{ pid }}">
-      <input type="hidden" name="telemetria" value="">
-      <button type="submit">Adicionar ao carrinho</button>
-    </form>
-  </li>
-  {% endfor %}
-</ul>
+{% if q or categoria %}
+  <div class="resultado">
+    <h1>{% if q %}Resultados para "{{ q }}"{% else %}{{ categorias[categoria] }}{% endif %}</h1>
+    <span class="muted">{{ produtos|length }} {{ "produto" if produtos|length == 1 else "produtos" }}</span>
+  </div>
+  {% if produtos %}
+  <ul class="grade">
+    {% for pid, p in produtos.items() %}{{ cartao_produto(pid, p, frete_gratis_de) }}{% endfor %}
+  </ul>
+  {% else %}
+  <div class="cartao vazio">
+    <h2>Nada encontrado</h2>
+    <p class="muted">Tente outra palavra ou veja o catálogo completo.</p>
+    <a class="botao" href="/?categoria=">Ver todos os produtos</a>
+  </div>
+  {% endif %}
+{% else %}
+  <section class="banner">
+    <div class="texto">
+      <h1>R$ 10,00 de desconto na primeira compra</h1>
+      <p>Use o cupom <span class="cupom">PRIMEIRA10</span> na hora de pagar. Vale para qualquer produto da loja.</p>
+      <div class="acoes"><a class="botao" href="/cadastro">Criar minha conta</a></div>
+    </div>
+    <img src="/static/img/p11.jpg" alt="Xícara de porcelana ao lado de um livro aberto" width="640" height="640">
+  </section>
+
+  <section class="secao">
+    <h2>Ofertas do dia</h2>
+    <ul class="ofertas">
+      {% for pid, p in ofertas.items() %}{{ cartao_produto(pid, p, frete_gratis_de) }}{% endfor %}
+    </ul>
+  </section>
+
+  <section class="secao">
+    <h2>Todos os produtos</h2>
+    <ul class="grade">
+      {% for pid, p in produtos.items() %}{{ cartao_produto(pid, p, frete_gratis_de) }}{% endfor %}
+    </ul>
+  </section>
+{% endif %}
 {% endblock %}
