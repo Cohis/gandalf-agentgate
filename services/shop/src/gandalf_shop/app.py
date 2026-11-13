@@ -218,6 +218,7 @@ class Settings:
     # training data is collected: blocking would censor everything an attacker does next.
     shadow: bool = False
     mandate_key: str = ""  # base64url Ed25519 private key; empty = a fresh one per start
+    mandate_key_file: str = ""  # or read it from this file (survives restarts)
     # Recording mode: real people, with consent, produce labelled human sessions.
     recording: bool = False
     # Public recording through a tunnel: the whole shop sits behind an invite code,
@@ -239,6 +240,7 @@ class Settings:
             fail_open=e.get("SHOP_FAIL_OPEN", "1") == "1",
             shadow=e.get("SHOP_SHADOW", "0") == "1",
             mandate_key=e.get("SHOP_MANDATE_KEY", ""),
+            mandate_key_file=e.get("SHOP_MANDATE_KEY_FILE", ""),
             recording=e.get("SHOP_RECORDING", "0") == "1",
             invite_code=e.get("SHOP_INVITE_CODE", "").strip(),
             tunnel=e.get("SHOP_TUNNEL", "0") == "1",
@@ -358,11 +360,17 @@ def create_app(
     tpl.env.filters["brl"] = brl
     client = http or httpx.AsyncClient(base_url=s.engine_url, timeout=s.engine_timeout_s)
 
-    # The key this shop signs mandates with. Lab default: a new key each start, so
-    # mandates do not survive a restart (documented). Its public half is published.
-    mandate_key = (
-        private_from_b64u(s.mandate_key) if s.mandate_key else Ed25519PrivateKey.generate()
-    )
+    # The key this shop signs mandates with; its public half is published. It must
+    # survive restarts: a new key would void every mandate already granted, and the
+    # engine would keep the old public key until its next refresh. Without one
+    # configured (unit tests), a fresh key per start.
+    raw_key = s.mandate_key
+    if not raw_key and s.mandate_key_file:
+        try:
+            raw_key = Path(s.mandate_key_file).read_text().strip()
+        except OSError:
+            log.warning("mandate key file %s missing: using a fresh key", s.mandate_key_file)
+    mandate_key = private_from_b64u(raw_key) if raw_key else Ed25519PrivateKey.generate()
     mandate_kid = "loja-" + thumbprint(public_jwk(mandate_key.public_key()))[:12]
 
     sessions: dict[str, Session] = {}

@@ -93,13 +93,15 @@ class Human:
         self.sigma = rng.uniform(0.6, 1.1)
         self.hurry = rng.uniform(0.1, 0.35)
         self.distraction = rng.uniform(0.04, 0.15)
+        self.quick = False  # the next pointer move is a hurried one
 
     def _lognormal(self, median: float, sigma: float, cap: float) -> float:
         return min(self.rng.lognormvariate(math.log(median), sigma), cap)
 
     async def think(self, scale: float = 1.0) -> None:
-        if self.rng.random() < self.hurry:
-            pause = self._lognormal(0.45, 0.5, 1.5)
+        self.quick = self.rng.random() < self.hurry
+        if self.quick:
+            pause = self._lognormal(0.25, 0.5, 1.0)
         else:
             pause = self._lognormal(self.p.think_s * scale, self.sigma, 30.0)
         if self.rng.random() < self.distraction:
@@ -118,9 +120,12 @@ class Human:
         return cx + fx * box["width"], cy + fy * box["height"]
 
     async def _move(self, to: tuple[float, float]) -> None:
+        # In a hurry the hand already knows the way: the same stroke, played faster.
+        speed = self.rng.uniform(0.3, 0.5) if self.quick else 1.0
+        self.quick = False
         for delay, x, y in path_between(self.rng.choice(self.strokes), self.pos, to):
             await self.page.mouse.move(x, y)
-            await asyncio.sleep(delay)
+            await asyncio.sleep(delay * speed)
         self.pos = to
 
     async def tab_to(self, loc: Any) -> None:

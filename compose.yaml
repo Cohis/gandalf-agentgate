@@ -76,6 +76,8 @@ services:
       SHOP_RECORDING: ${SHOP_RECORDING:-0}   # 1 = /gravar: consented, labelled human sessions
       SHOP_INVITE_CODE: ${SHOP_INVITE_CODE:-}   # set = the whole shop is invitation only
       SHOP_TUNNEL: ${SHOP_TUNNEL:-0}           # 1 = reached through a tunnel: TLS fingerprints dropped
+      SHOP_MANDATE_KEY_FILE: /chaves/mandato-loja.b64u   # make chaves
+    volumes: ["./data/loja:/chaves:ro"]
     depends_on:
       engine: { condition: service_healthy }
     healthcheck:
@@ -108,6 +110,8 @@ services:
       SHOP_BEHIND_PROXY: "1"
       SHOP_LAB_MODE: "1"
       SHOP_SHADOW: "1"
+      SHOP_MANDATE_KEY_FILE: /chaves/mandato-loja-sim.b64u
+    volumes: ["./data/loja:/chaves:ro"]
     depends_on:
       engine: { condition: service_healthy }
     healthcheck:

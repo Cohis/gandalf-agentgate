@@ -1,11 +1,11 @@
-.PHONY: eval public tunnel record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
+.PHONY: chaves eval public tunnel record record-status simulate labels train reload help up down logs test lint e2e load load-burst telemetry dev psql clean
 
 RUN ?= coleta
 
 help:            ## list targets
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/'
 
-up:              ## build and start the whole lab
+up: chaves       ## build and start the whole lab
 	docker compose up -d --build --wait
 	@echo "loja:   https://localhost:8443  (certificado autoassinado)"
 	@echo "painel: http://localhost:8501"
@@ -86,3 +86,8 @@ dev: telemetry   ## engine + shop in one process, no Docker (in-memory state)
 
 psql:            ## open a SQL shell on the lab database
 	docker compose exec postgres psql -U gandalf gandalf
+
+chaves:          ## the shops' mandate signing keys (lab: readable by the container user)
+	@mkdir -p data/loja
+	@for f in mandato-loja mandato-loja-sim; do [ -f data/loja/$$f.b64u ] || uv run python -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K; from cryptography.hazmat.primitives.serialization import Encoding as E, PrivateFormat as P, NoEncryption as N; from gandalf_contracts.keys import b64u; print(b64u(K.generate().private_bytes(E.Raw, P.Raw, N())))" > data/loja/$$f.b64u; chmod 644 data/loja/$$f.b64u; done
+	@ls data/loja
