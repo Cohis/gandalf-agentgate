@@ -575,10 +575,14 @@ version = "0.1.0"
 source = { editable = "packages/features" }
 dependencies = [
     { name = "gandalf-contracts" },
+    { name = "numpy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "gandalf-contracts", editable = "packages/contracts" }]
+requires-dist = [
+    { name = "gandalf-contracts", editable = "packages/contracts" },
+    { name = "numpy", specifier = ">=2" },
+]
 
 [[package]]
 name = "gandalf-shop"

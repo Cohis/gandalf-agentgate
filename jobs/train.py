@@ -26,7 +26,7 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 import psycopg
-from gandalf_features import FEATURE_NAMES, FEATURE_VERSION, upgrade_f1
+from gandalf_features import FEATURE_NAMES, FEATURE_VERSION, upgrade
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
 
@@ -87,10 +87,11 @@ def load() -> pl.DataFrame:
     """
     with psycopg.connect(DSN) as conn:
         rows = conn.execute(
-            sql.replace("f.features,", "f.features, f.versao_features,"), ([FEATURE_VERSION, "f1"],)
+            sql.replace("f.features,", "f.features, f.versao_features,"),
+            ([FEATURE_VERSION, "f2", "f1"],),
         ).fetchall()
-    # f1 vectors predate touch telemetry; they are upgraded by a documented rule.
-    rows = [(*r[:4], r[4] if r[5] == FEATURE_VERSION else upgrade_f1(r[4]), *r[6:]) for r in rows]
+    # Older vectors are brought up to the current feature set (see gandalf_features.upgrade).
+    rows = [(*r[:4], upgrade(r[4], r[5]), *r[6:]) for r in rows]
     if not rows:
         raise SystemExit("no labelled data: run simulator.run, then simulator.labels")
     cols = ("avaliacao_id sessao_id momento evento features y nivel perfil fonte "

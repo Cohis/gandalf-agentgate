@@ -96,6 +96,8 @@ class AssinaturaAgente(Strict):
 
 class DadosCadastro(Strict):
     nome: ShortText = ""
+    # Used only for its shape ("a.a9@gmail.com") by the scale layer; never stored.
+    email: Annotated[str, StringConstraints(max_length=200)] = ""
     endereco: ShortText = ""
     bio: Annotated[str, StringConstraints(max_length=2000)] = ""
 

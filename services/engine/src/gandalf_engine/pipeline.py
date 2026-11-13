@@ -12,8 +12,15 @@ import secrets
 import time
 from dataclasses import dataclass, field
 
-from gandalf_contracts import AssessRequest, AssessResponse, Decisao
-from gandalf_features import FEATURE_VERSION, compute, state_queries, state_writes
+from gandalf_contracts import AssessRequest, AssessResponse, Decisao, Evento
+from gandalf_features import (
+    FEATURE_VERSION,
+    ScaleWindow,
+    compute,
+    signup_scale_inputs,
+    state_queries,
+    state_writes,
+)
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -87,6 +94,8 @@ class Engine:
         self._rules = rules
         self.scorer = scorer  # swapped atomically on model reload (phase 2)
         self.fraud_scorer = fraud_scorer
+        # In-process, like the planned FAISS index: lost on restart (documented).
+        self.scale = ScaleWindow()
         self._policy = policy
         self._ip_hmac_key = ip_hmac_key
         self.metrics = Metrics()
@@ -117,7 +126,10 @@ class Engine:
             degraded = True
         lap("janelas")
 
-        features = compute(req, counts, net)
+        vec, shape = signup_scale_inputs(req)
+        signup = req.evento is Evento.cadastro
+        scale = self.scale.query(vec, shape, now) if signup else None
+        features = compute(req, counts, net, scale)
         lap("features")
 
         fired = evaluate(self._rules, features)
@@ -178,9 +190,14 @@ class Engine:
                 )
             except RedisError:
                 log.warning("state write failed for %s", avaliacao_id)
+        if signup:
+            self.scale.add(vec, shape, now)
         lap("gravacao_janelas")
 
-        self._storage.enqueue(self._record(req, resp, features, net, stages))
+        record = self._record(req, resp, features, net, stages)
+        if vec is not None:
+            record.embedding = [round(float(x), 5) for x in vec]
+        self._storage.enqueue(record)
         self.metrics.observe(decisao.value, latency_ms, degraded)
         return resp
 

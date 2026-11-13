@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from gandalf_features import FEATURE_VERSION, FeatureVector
+from gandalf_features import COMPATIBLE_VERSIONS, FEATURE_VERSION, FeatureVector
 
 Contributions = dict[str, float]
 
@@ -96,7 +96,7 @@ class LightGBMScorer:
         import numpy as np
 
         meta: dict[str, Any] = json.loads((model_dir / "meta.json").read_text(encoding="utf-8"))
-        if meta["versao_features"] != FEATURE_VERSION:
+        if meta["versao_features"] not in COMPATIBLE_VERSIONS:
             # A model must only ever see the feature set it was trained on.
             raise ModelError(
                 f"model {meta['versao']} was trained on features {meta['versao_features']}, "

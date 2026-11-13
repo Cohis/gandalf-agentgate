@@ -19,10 +19,16 @@ import statistics
 from collections.abc import Mapping
 from dataclasses import dataclass
 from ipaddress import IPv6Address, ip_network
+from typing import Any
 
 from gandalf_contracts import AssessRequest, Digitacao, Evento
 
-FEATURE_VERSION = "f2"  # f2 = f1 + toque, toque_area
+from .scale import ScaleInfo, ScaleWindow, address_shape, email_shape, embed, text_of
+
+FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*
+# Feature sets that f3 only extends: every feature they define is computed exactly the
+# same way in f3, so a model trained on them can still be served.
+COMPATIBLE_VERSIONS = frozenset({"f2", "f3"})
 
 WINDOWS: dict[str, int] = {"10m": 600, "1h": 3600, "24h": 86400}
 MAX_WINDOW_S = max(WINDOWS.values())
@@ -153,7 +159,12 @@ _MOBILE_UA = ("Android", "iPhone", "Mobile")
 _AUTOMATION_UA = ("python", "curl", "httpx", "aiohttp", "go-http", "Headless", "node-fetch")
 
 
-def compute(ev: AssessRequest, counts: Mapping[str, int], net: NetworkInfo) -> FeatureVector:
+def compute(
+    ev: AssessRequest,
+    counts: Mapping[str, int],
+    net: NetworkInfo,
+    scale: ScaleInfo | None = None,
+) -> FeatureVector:
     """Pure function: same inputs, same vector, online or offline."""
     t = ev.telemetria
     ua = ev.user_agent
@@ -201,6 +212,14 @@ def compute(ev: AssessRequest, counts: Mapping[str, int], net: NetworkInfo) -> F
     f["valor"] = ev.valor
     f["agente_declarado"] = float(ev.assinatura_agente is not None)
 
+    # layer 4, second half: sign-ups that look alike (only meaningful for a sign-up)
+    signup = ev.evento is Evento.cadastro and scale is not None
+    f["escala_cadastros_6h"] = float(scale.cadastros_6h) if signup else None
+    f["escala_semelhantes_6h"] = float(scale.semelhantes_6h) if signup else None
+    f["escala_sim_max_6h"] = scale.sim_max_6h if signup else None
+    f["escala_mesmo_email_6h"] = float(scale.mesmo_formato_email_6h) if signup else None
+    f["escala_mesmo_endereco_6h"] = float(scale.mesmo_formato_endereco_6h) if signup else None
+
     # velocity (layer 4, first half): sliding windows read before this event is written
     for name in all_count_names():
         f[name] = float(counts.get(name, 0))
@@ -226,6 +245,14 @@ FEATURE_NAMES: tuple[str, ...] = tuple(
 )
 
 
+def signup_scale_inputs(ev: AssessRequest) -> tuple[Any, tuple[str, str]]:
+    """(text vector, (e-mail format, address format)) of a sign-up."""
+    if ev.evento is not Evento.cadastro or ev.dados_cadastro is None:
+        return None, ("", "")
+    d = ev.dados_cadastro
+    return embed(text_of(d.bio, d.endereco)), (email_shape(d.email), address_shape(d.endereco))
+
+
 def upgrade_f1(features: Mapping[str, float | None]) -> FeatureVector:
     """Bring a vector logged under feature set f1 up to f2.
 
@@ -239,6 +266,16 @@ def upgrade_f1(features: Mapping[str, float | None]) -> FeatureVector:
     out["toque"] = (1.0 if out.get("ua_movel") else 0.0) if clicked else None
     out["toque_area"] = None
     return {name: out.get(name) for name in FEATURE_NAMES}
+
+
+def upgrade(features: Mapping[str, float | None], versao: str) -> FeatureVector:
+    """Bring a logged vector from an older feature set up to the current one. Features
+    the old set did not have are missing (None), except where a documented rule can
+    infer them (f1 -> toque, see ``upgrade_f1``)."""
+    if versao == FEATURE_VERSION:
+        return {name: features.get(name) for name in FEATURE_NAMES}
+    base = upgrade_f1(features) if versao == "f1" else features
+    return {name: base.get(name) for name in FEATURE_NAMES}
 
 
 class MemoryStateStore:
@@ -270,7 +307,14 @@ class MemoryStateStore:
 
 __all__ = [
     "FEATURE_NAMES",
+    "COMPATIBLE_VERSIONS",
     "FEATURE_VERSION",
+    "ScaleInfo",
+    "ScaleWindow",
+    "email_shape",
+    "embed",
+    "signup_scale_inputs",
+    "text_of",
     "MAX_WINDOW_S",
     "WINDOWS",
     "FeatureVector",
@@ -283,5 +327,6 @@ __all__ = [
     "ip_key",
     "state_queries",
     "state_writes",
+    "upgrade",
     "upgrade_f1",
 ]

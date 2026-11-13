@@ -3,7 +3,7 @@ name = "gandalf-features"
 version = "0.1.0"
 description = "The one feature library used by both the online engine and the offline jobs."
 requires-python = ">=3.13"
-dependencies = ["gandalf-contracts"]
+dependencies = ["gandalf-contracts", "numpy>=2"]
 
 [tool.uv.sources]
 gandalf-contracts = { workspace = true }

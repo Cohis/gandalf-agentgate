@@ -553,7 +553,7 @@ def create_app(
             request,
             Evento.cadastro,
             tel,
-            dados_cadastro={"nome": nome, "endereco": endereco, "bio": bio},
+            dados_cadastro={"nome": nome, "email": email, "endereco": endereco, "bio": bio},
         )
         if blocked := gate(request, verdict):
             return blocked

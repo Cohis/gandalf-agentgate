@@ -104,33 +104,79 @@ def test_card(rng: random.Random, *, valid: bool = True) -> str:
     return "".join(map(str, [*digits, check]))
 
 
+# Identities of simulated honest people. Deliberately varied: if every simulated
+# person wrote the same kind of e-mail and bio, the sign-up similarity layer (phase
+# 4) would learn the generator instead of the account farm.
 _FIRST = (
-    "Ana Bruno Carla Diego Elisa Fábio Gabriela Heitor Isabela João "
-    "Karina Lucas Marina Nuno Olívia Paulo Rafaela Sérgio Tatiana Vitor"
+    "Ana Bruno Carla Diego Elisa Fábio Gabriela Heitor Isabela João Karina Lucas Marina "
+    "Nuno Olívia Paulo Rafaela Sérgio Tatiana Vitor Antônia Benedito Cleide Edson Francisca "
+    "Geraldo Iracema Jéssica Kauã Luzia Matheus Neide Otávio Priscila Raimundo Sueli "
+    "Thiago Valdirene Wellington Yasmin Zuleica Arthur Beatriz Caio Daniela Enzo Fernanda "
+    "Gustavo Helena Igor Juliana Kátia Leonardo Manuela Natália Rogério Simone Ubirajara"
 ).split()
 _LAST = (
-    "Almeida Barbosa Cardoso Dias Esteves Ferreira Gomes Lima "
-    "Martins Nogueira Oliveira Pereira Ramos Souza Teixeira Vieira"
+    "Almeida Barbosa Cardoso Dias Esteves Ferreira Gomes Lima Martins Nogueira Oliveira "
+    "Pereira Ramos Souza Teixeira Vieira Silva Santos Rodrigues Costa Ribeiro Carvalho "
+    "Araújo Rocha Mendes Moreira Nascimento Freitas Moura Cavalcanti Monteiro Batista "
+    "Correia Pinto Teles Brandão Siqueira Queiroz Macedo Farias Coelho"
 ).split()
 _STREETS = (
-    "das Flores",
-    "São João",
-    "Sete de Setembro",
-    "da Praia",
-    "Quinze de Novembro",
-    "do Sol",
-    "Bahia",
-    "das Acácias",
+    "Rua das Flores", "R. São João", "Av. Sete de Setembro", "Rua da Praia",
+    "R. Quinze de Novembro", "Travessa do Sol", "Av. Bahia", "Rua das Acácias",
+    "Alameda Santos", "Rua Tiradentes", "Av. Brasil", "R. Dom Pedro II", "Rua Goiás",
+    "Estrada do Campo Limpo", "Rua Padre Anchieta", "Av. Getúlio Vargas",
+)  # fmt: skip
+_COMPLEMENTS = ("", "", "", " apto 12", " ap 304", " casa 2", " bloco B", " fundos")
+_DOMAINS = ("gmail.com",) * 6 + (
+    "hotmail.com",
+    "outlook.com",
+    "yahoo.com.br",
+    "uol.com.br",
+    "bol.com.br",
 )
-_BIOS = [
-    "",
-    "",
-    "Gosto de trilhas e café.",
-    "Comprando presente pro meu irmão.",
-    "professora, mãe de dois",
-    "Colecionador de canecas desde 2015!",
-    "vi a loja no instagram",
-]
+_BIO_BITS = (
+    "gosto de cozinhar", "trabalho com vendas", "estudante de enfermagem", "mãe do Pedro",
+    "aposentado", "fã de café", "comprando presente", "vi no insta", "moro em Curitiba",
+    "corredora amadora", "pai de pet", "professor de história", "adoro viajar",
+    "primeira compra aqui", "indicação de amiga", "colecionando canecas", "sou de BH",
+    "faço artesanato", "trabalho de casa", "curto trilha",
+)  # fmt: skip
+
+
+def _ascii(text: str) -> str:
+    import unicodedata
+
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    ).lower()
+
+
+def _email(rng: random.Random, first: str, last: str) -> str:
+    f, l_ = _ascii(first), _ascii(last)
+    year = rng.randrange(1960, 2008)
+    local = rng.choice(
+        (
+            f"{f}.{l_}",
+            f"{f}{l_}",
+            f"{f}_{l_}{rng.randrange(10, 99)}",
+            f"{f[0]}{l_}{year % 100:02d}",
+            f"{f}{year}",
+            f"{l_}.{f}",
+            f"{f}{rng.randrange(1, 999)}",
+            f"{f[:3]}{l_[:4]}",
+        )
+    )
+    return f"{local}@{rng.choice(_DOMAINS)}"
+
+
+def _bio(rng: random.Random) -> str:
+    if rng.random() < 0.65:
+        return ""  # most people skip optional fields
+    bits = rng.sample(_BIO_BITS, rng.choice((1, 1, 2)))
+    text = ", ".join(bits)
+    if rng.random() < 0.5:
+        text = text.capitalize()
+    return text + rng.choice(("", "", ".", "!", " :)"))
 
 
 _PW_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
@@ -147,11 +193,20 @@ class Identity:
 
 def identity(rng: random.Random) -> Identity:
     first, last = rng.choice(_FIRST), rng.choice(_LAST)
-    slug = f"{first}.{last}".lower().encode("ascii", "ignore").decode() or "cliente"
+    if rng.random() < 0.3:
+        last = f"{last} {rng.choice(_LAST)}"
+    endereco = (
+        ""
+        if rng.random() < 0.15
+        else (
+            f"{rng.choice(_STREETS)}{rng.choice((', ', ' ', ', nº '))}{rng.randrange(1, 3000)}"
+            f"{rng.choice(_COMPLEMENTS)}"
+        )
+    )
     return Identity(
-        nome=f"{first} {last}",
-        email=f"{slug}{rng.randrange(10_000)}@example.com",
+        nome=f"{first} {last}" if rng.random() < 0.9 else first.lower(),
+        email=_email(rng, first, last.split()[0]),
         senha="".join(rng.choice(_PW_CHARS) for _ in range(rng.randint(8, 12))),
-        endereco=f"Rua {rng.choice(_STREETS)}, {rng.randrange(1, 2000)}",
-        bio=rng.choice(_BIOS),
+        endereco=endereco,
+        bio=_bio(rng),
     )

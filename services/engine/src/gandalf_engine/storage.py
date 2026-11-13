@@ -17,11 +17,12 @@ from gandalf_contracts import LabelIn
 log = logging.getLogger("gandalf.storage")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Record:
     event: dict[str, Any]
     decision: dict[str, Any]
     features: dict[str, Any]
+    embedding: list[float] | None = None  # sign-up text vector; the text is never stored
 
 
 class Storage(Protocol):
@@ -137,6 +138,21 @@ class PostgresStorage:
                 "ON CONFLICT DO NOTHING",
                 [wrap(r.features) for r in batch],
             )
+            embeddings = [
+                {
+                    "avaliacao_id": r.event["avaliacao_id"],
+                    "momento": r.event["momento"],
+                    "vetor": r.embedding,
+                }
+                for r in batch
+                if r.embedding is not None
+            ]
+            if embeddings:
+                await cur.executemany(
+                    "INSERT INTO signup_embeddings (avaliacao_id, momento, vetor) "
+                    "VALUES (%(avaliacao_id)s, %(momento)s, %(vetor)s) ON CONFLICT DO NOTHING",
+                    embeddings,
+                )
             challenges = [r.decision for r in batch if r.decision["desafio_id"]]
             if challenges:
                 await cur.executemany(

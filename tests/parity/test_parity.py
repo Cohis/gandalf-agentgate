@@ -16,7 +16,9 @@ from gandalf_features import (
     FEATURE_NAMES,
     MemoryStateStore,
     NetworkInfo,
+    ScaleWindow,
     compute,
+    signup_scale_inputs,
     state_queries,
     state_writes,
 )
@@ -40,6 +42,18 @@ def _random_events(n: int, seed: int) -> list[dict]:
                 dispositivo_id=rng.choice(["d_1", "d_2"]),
                 ip=rng.choice(["203.0.113.7", "203.0.113.8", "2001:db8::1", "2001:db8::2"]),
                 cartao_hash=rng.choice(["k_1", "k_2"]) if evento == "checkout" else None,
+                dados_cadastro=(
+                    {
+                        "nome": "x",
+                        "email": rng.choice(["ana.lima1@gmail.com", "zz9@uol.com.br", ""]),
+                        "bio": rng.choice(
+                            ["", "adoro viajar e cozinhar", "Amo viajar e cozinhar!"]
+                        ),
+                        "endereco": rng.choice(["", "Rua A, 12", "Av. Brasil 900"]),
+                    }
+                    if evento == "cadastro"
+                    else None
+                ),
             )
         )
     return out
@@ -66,11 +80,16 @@ def test_offline_replay_reproduces_logged_vectors(harness: Harness) -> None:
     logged = harness.storage.records
     assert len(logged) == len(events)
 
-    memory = MemoryStateStore()
+    memory, scale = MemoryStateStore(), ScaleWindow()
     for raw, record in zip(events, logged, strict=True):
         req = AssessRequest.model_validate(raw)
         now = req.momento.timestamp()
-        replayed = compute(req, memory.read(state_queries(req), now), NetworkInfo())
+        vec, shape = signup_scale_inputs(req)
+        signup = req.evento == "cadastro"
+        info = scale.query(vec, shape, now) if signup else None
+        replayed = compute(req, memory.read(state_queries(req), now), NetworkInfo(), info)
+        if signup:
+            scale.add(vec, shape, now)
         assert tuple(replayed) == FEATURE_NAMES
         assert replayed == record.features["features"]
         memory.write(state_writes(req, record.event["avaliacao_id"]), now)
