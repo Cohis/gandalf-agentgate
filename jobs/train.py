@@ -131,13 +131,13 @@ def temporal_split(df: pl.DataFrame) -> pl.DataFrame:
     test period and the model could never learn it."""
     if "vf" in df.columns and df["vf"].n_unique() > 1:
         return pl.concat(
-            [_temporal_split(part) for _, part in df.group_by("vf", maintain_order=True)],
+            [split_in_time(part) for _, part in df.group_by("vf", maintain_order=True)],
             how="diagonal",
         )
-    return _temporal_split(df)
+    return split_in_time(df)
 
 
-def _temporal_split(df: pl.DataFrame) -> pl.DataFrame:
+def split_in_time(df: pl.DataFrame) -> pl.DataFrame:
     """Each session goes to the set of its first event: 60 % / 20 % / 20 % in time."""
     first = df.group_by("sessao_id").agg(pl.col("momento").min().alias("inicio")).sort("inicio")
     n = first.height

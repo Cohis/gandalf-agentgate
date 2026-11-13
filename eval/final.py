@@ -36,7 +36,7 @@ from jobs.train import (
     fit,
     load,
     people,
-    temporal_split,
+    split_in_time,
     threshold_at_fpr,
 )
 from jobs.train_fraud import FRAUD_FEATURES, as_fraud, cost_thresholds, costs
@@ -131,6 +131,16 @@ def groups(test: pl.DataFrame) -> list[tuple[str, np.ndarray, str]]:
     return out
 
 
+def stratified_split(df: pl.DataFrame) -> pl.DataFrame:
+    """60/20/20 in time WITHIN each kind of actor (scenario and level). The final
+    campaign runs each kind as its own batch, one after the other; a single split in
+    time would leave only the last batch in the test period."""
+    return pl.concat(
+        [split_in_time(part) for _, part in df.group_by("fonte", "nivel", maintain_order=True)],
+        how="diagonal",
+    )
+
+
 def level5(cohort: str) -> list[str]:
     sql = """
         SELECT l.perfil, e.sessao_id, d.decisao
@@ -166,7 +176,7 @@ def main() -> None:
     t0 = time.monotonic()
 
     everything = load()
-    sim = temporal_split(
+    sim = stratified_split(
         everything.filter(~pl.col("real") & (pl.col("vf") == a.cohort) & (pl.col("nivel") != 5))
     )
     real = everything.filter(pl.col("real"))
