@@ -91,6 +91,7 @@ def load() -> pl.DataFrame:
             ([FEATURE_VERSION, "f2", "f1"],),
         ).fetchall()
     # Older vectors are brought up to the current feature set (see gandalf_features.upgrade).
+    versions = [r[5] for r in rows]
     rows = [(*r[:4], upgrade(r[4], r[5]), *r[6:]) for r in rows]
     if not rows:
         raise SystemExit("no labelled data: run simulator.run, then simulator.labels")
@@ -102,7 +103,10 @@ def load() -> pl.DataFrame:
         schema={n: pl.Float64 for n in FEATURE_NAMES},
     )
     df = pl.concat([df.drop("features"), feats], how="horizontal")
-    return df.with_columns(pl.col("fonte").str.starts_with("gravacao").alias("real"))
+    return df.with_columns(
+        pl.col("fonte").str.starts_with("gravacao").alias("real"),
+        pl.Series("vf", versions),  # feature set the vector was logged under
+    )
 
 
 def people(real: pl.DataFrame) -> list[str]:
@@ -122,6 +126,18 @@ def assign_people(real: pl.DataFrame, names: list[str]) -> pl.DataFrame:
 
 
 def temporal_split(df: pl.DataFrame) -> pl.DataFrame:
+    """60 % / 20 % / 20 % in time, done separately for each feature set (each data
+    collection campaign): otherwise a newly added feature would exist only in the
+    test period and the model could never learn it."""
+    if "vf" in df.columns and df["vf"].n_unique() > 1:
+        return pl.concat(
+            [_temporal_split(part) for _, part in df.group_by("vf", maintain_order=True)],
+            how="diagonal",
+        )
+    return _temporal_split(df)
+
+
+def _temporal_split(df: pl.DataFrame) -> pl.DataFrame:
     """Each session goes to the set of its first event: 60 % / 20 % / 20 % in time."""
     first = df.group_by("sessao_id").agg(pl.col("momento").min().alias("inicio")).sort("inicio")
     n = first.height

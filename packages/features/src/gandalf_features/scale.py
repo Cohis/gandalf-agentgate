@@ -93,6 +93,26 @@ def email_shape(email: str) -> str:
     return f"{shape}@{domain}"
 
 
+def bio_shape(bio: str) -> str:
+    """Length band, capital first letter, closing mark: '4M.' for an 80-character
+    sentence. A batch of generated profiles comes out in one shape."""
+    bio = bio.strip()
+    if not bio:
+        return ""
+    end = bio[-1] if bio[-1] in ".!?)" else "_"
+    return f"{min(len(bio) // 20, 6)}{'M' if bio[0].isupper() else 'm'}{end}"
+
+
+def name_shape(nome: str) -> str:
+    parts = nome.split()
+    return f"{len(parts)}{'M' if parts and all(w[:1].isupper() for w in parts) else 'm'}"
+
+
+def profile_signature(nome: str, email: str, endereco: str, bio: str) -> str:
+    """How the whole sign-up was written, without any of its content."""
+    return "|".join((name_shape(nome), email_shape(email), address_shape(endereco), bio_shape(bio)))
+
+
 @dataclass(frozen=True, slots=True)
 class ScaleInfo:
     cadastros_6h: int = 0  # all sign-ups in the window, whatever they look like
@@ -100,6 +120,7 @@ class ScaleInfo:
     sim_max_6h: float | None = None  # closest previous sign-up (None: no text)
     mesmo_formato_email_6h: int = 0
     mesmo_formato_endereco_6h: int = 0
+    mesmo_perfil_6h: int = 0  # same name, e-mail, address and bio format at once
 
 
 class ScaleWindow:
@@ -109,24 +130,25 @@ class ScaleWindow:
     def __init__(self) -> None:
         self._t: list[float] = []
         self._v: list[np.ndarray | None] = []
-        self._shape: list[tuple[str, str]] = []
+        self._shape: list[tuple[str, str, str]] = []
 
     def _alive(self, now: float) -> np.ndarray:
         t = np.asarray(self._t, dtype=np.float64)
         return (t > now - WINDOW_S) & (t <= now)
 
-    def query(self, vec: np.ndarray | None, shape: tuple[str, str], now: float) -> ScaleInfo:
-        """``shape``: (e-mail format, address format)."""
+    def query(self, vec: np.ndarray | None, shape: tuple[str, str, str], now: float) -> ScaleInfo:
+        """``shape``: (e-mail format, address format, whole-profile signature)."""
         if not self._t:
             return ScaleInfo(sim_max_6h=0.0 if vec is not None else None)
         alive = self._alive(now)
         idx = np.flatnonzero(alive)
         same_email = sum(1 for i in idx if shape[0] and self._shape[i][0] == shape[0])
         same_addr = sum(1 for i in idx if shape[1] and self._shape[i][1] == shape[1])
+        same_profile = sum(1 for i in idx if shape[2] and self._shape[i][2] == shape[2])
         with_text = [i for i in idx if self._v[i] is not None]
         if vec is None or not with_text:
             sim = None if vec is None else 0.0
-            return ScaleInfo(int(alive.sum()), 0, sim, same_email, same_addr)
+            return ScaleInfo(int(alive.sum()), 0, sim, same_email, same_addr, same_profile)
         sims = np.stack([self._v[i] for i in with_text]) @ vec
         return ScaleInfo(
             int(alive.sum()),
@@ -134,9 +156,10 @@ class ScaleWindow:
             round(float(sims.max()), 6),
             same_email,
             same_addr,
+            same_profile,
         )
 
-    def add(self, vec: np.ndarray | None, shape: tuple[str, str], now: float) -> None:
+    def add(self, vec: np.ndarray | None, shape: tuple[str, str, str], now: float) -> None:
         self._t.append(now)
         self._v.append(vec)
         self._shape.append(shape)

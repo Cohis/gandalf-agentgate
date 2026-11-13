@@ -52,7 +52,7 @@ FRAUD_FEATURES = [
     n
     for n in FEATURE_NAMES
     if n.startswith(_VELOCITY)
-    or n.startswith(("evento_", "rede_"))
+    or n.startswith(("evento_", "rede_", "escala_"))
     or n in {"valor", "ip_em_lista", "ip_reputacao"}
 ]
 
@@ -96,6 +96,27 @@ def cost_thresholds(
             if cost < best[0]:
                 best = (cost, float(t1), float(t2))
     return best
+
+
+def farm_curve(part: pl.DataFrame, flags: np.ndarray, first: int = 20) -> dict[str, float]:
+    """A farm account counts as caught if any of its events was flagged. Accounts in
+    the order they were created: how many of the first ``first`` were caught, and
+    which was the first one caught."""
+    acc = (
+        part.with_columns(pl.Series("f", flags))
+        .group_by("sessao_id")
+        .agg(pl.col("momento").min().alias("t"), pl.col("f").any().alias("pego"))
+        .sort("t")
+    )
+    caught = acc["pego"].to_list()
+    head = caught[:first]
+    return {
+        "contas": len(caught),
+        "pegas": float(np.mean(caught)) if caught else float("nan"),
+        "primeiras": float(np.mean(head)) if head else float("nan"),
+        "n_primeiras": len(head),
+        "primeira_pega": (caught.index(True) + 1) if True in caught else 0,
+    }
 
 
 def as_fraud(df: pl.DataFrame) -> pl.DataFrame:
@@ -173,6 +194,48 @@ def main() -> None:
         ("Passos não fraudulentos de fraudadores", (yt == 0) & fraudster),
         ("Pessoas reais gravadas", (yt == 0) & test["real"].to_numpy()),
     ]
+
+    # Phase 4: the level 4 farm. Does each account escape on its own, and does the
+    # farm get caught by its scale? Also with a model that never saw this farm.
+    farm_lines: list[str] = []
+    farms = sorted({p for p in df["perfil"].to_list() if p.startswith("fazenda_llm_")})
+    for fz in farms:
+        part = test.filter(pl.col("perfil") == fz)
+        if not part.height:
+            continue
+        i = test["perfil"].to_numpy() == fz
+        a_curve = farm_curve(part, auto_flag[i])
+        c_curve = farm_curve(part, combined[i])
+        farm_lines += [
+            f"| {fz.removeprefix('fazenda_llm_')} (teste) | {c_curve['contas']} | "
+            f"{a_curve['pegas']:.0%} | {c_curve['pegas']:.0%} | "
+            f"{c_curve['primeiras']:.0%} das {c_curve['n_primeiras']} | "
+            f"{c_curve['primeira_pega'] or '-'} |"
+        ]
+    blind_lines: list[str] = []
+    for fz in farms:
+        others = [f for f in farms if f != fz]
+        if not others:
+            continue
+        keep = ~pl.col("perfil").eq(fz)
+        m_blind = fit(train.filter(keep), valid.filter(keep), FRAUD_FEATURES)
+        sv_b, yv_b = (
+            score(m_blind, valid.filter(keep)),
+            valid.filter(keep)["y"].to_numpy().astype(int),
+        )
+        _, b1, _ = cost_thresholds(sv_b, yv_b, c)
+        part = df.filter(pl.col("perfil") == fz)  # every account of this farm: never seen
+        auto_part = np.array(
+            [
+                auto.score(dict(zip(FEATURE_NAMES, row, strict=True)))[0]
+                for row in part.select(FEATURE_NAMES).iter_rows()
+            ]
+        ) >= (ta.desafiar if ta else 0.6)
+        curve = farm_curve(part, (score(m_blind, part) >= b1) | auto_part)
+        blind_lines.append(
+            f"| {fz.removeprefix('fazenda_llm_')} | {curve['contas']} | {curve['pegas']:.0%} | "
+            f"{curve['primeiras']:.0%} das {curve['n_primeiras']} | {curve['primeira_pega'] or '-'} |"
+        )
 
     stamp = time.strftime("%Y%m%d-%H%M")
     digest = hashlib.sha256(model.booster.model_to_string().encode()).hexdigest()[:6]
@@ -254,6 +317,23 @@ def main() -> None:
         f"| Só o modelo de automação | {only_auto:.0f} |",
         f"| Só o modelo de fraude | {only_fraud:.0f} |",
         f"| Os dois cruzados (o motor) | {both:.0f} |",
+        "",
+        "## Fazenda de contas (nível 4)",
+        "",
+        "Cada conta da fazenda é uma sessão que imita uma pessoa. Uma conta conta como pega "
+        "se qualquer evento dela foi desafiado ou negado.",
+        "",
+        "| Fazenda | Contas | Pegas só pela automação | Pegas pela decisão final | "
+        "Das primeiras contas | Primeira conta pega |",
+        "|---|---|---|---|---|---|",
+        *(farm_lines or ["| (nenhuma fazenda no período de teste) | | | | | |"]),
+        "",
+        "Com um modelo de fraude que **nunca viu aquela fazenda** (treinado sem nenhuma conta "
+        "dela), aplicado a todas as contas dela:",
+        "",
+        "| Fazenda nunca vista | Contas | Pegas | Das primeiras contas | Primeira conta pega |",
+        "|---|---|---|---|---|",
+        *(blind_lines or ["| (é preciso ter duas fazendas) | | | | |"]),
         "",
         "## O que o modelo usa (ganho)",
         "",

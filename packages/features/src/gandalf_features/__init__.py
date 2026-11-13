@@ -23,7 +23,15 @@ from typing import Any
 
 from gandalf_contracts import AssessRequest, Digitacao, Evento
 
-from .scale import ScaleInfo, ScaleWindow, address_shape, email_shape, embed, text_of
+from .scale import (
+    ScaleInfo,
+    ScaleWindow,
+    address_shape,
+    email_shape,
+    embed,
+    profile_signature,
+    text_of,
+)
 
 FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*
 # Feature sets that f3 only extends: every feature they define is computed exactly the
@@ -219,6 +227,7 @@ def compute(
     f["escala_sim_max_6h"] = scale.sim_max_6h if signup else None
     f["escala_mesmo_email_6h"] = float(scale.mesmo_formato_email_6h) if signup else None
     f["escala_mesmo_endereco_6h"] = float(scale.mesmo_formato_endereco_6h) if signup else None
+    f["escala_mesmo_perfil_6h"] = float(scale.mesmo_perfil_6h) if signup else None
 
     # velocity (layer 4, first half): sliding windows read before this event is written
     for name in all_count_names():
@@ -245,12 +254,17 @@ FEATURE_NAMES: tuple[str, ...] = tuple(
 )
 
 
-def signup_scale_inputs(ev: AssessRequest) -> tuple[Any, tuple[str, str]]:
-    """(text vector, (e-mail format, address format)) of a sign-up."""
+def signup_scale_inputs(ev: AssessRequest) -> tuple[Any, tuple[str, str, str]]:
+    """(text vector, (e-mail format, address format, profile signature)) of a sign-up."""
     if ev.evento is not Evento.cadastro or ev.dados_cadastro is None:
-        return None, ("", "")
+        return None, ("", "", "")
     d = ev.dados_cadastro
-    return embed(text_of(d.bio, d.endereco)), (email_shape(d.email), address_shape(d.endereco))
+    signature = profile_signature(d.nome, d.email, d.endereco, d.bio)
+    return embed(text_of(d.bio, d.endereco)), (
+        email_shape(d.email),
+        address_shape(d.endereco),
+        signature,
+    )
 
 
 def upgrade_f1(features: Mapping[str, float | None]) -> FeatureVector:
