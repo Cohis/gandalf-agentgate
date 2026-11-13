@@ -37,6 +37,8 @@ FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*, foco_
 # Feature sets that f3 only extends: every feature they define is computed exactly the
 # same way in f3, so a model trained on them can still be served.
 COMPATIBLE_VERSIONS = frozenset({"f2", "f3"})
+# "f3a": vectors logged by an early f3 engine, before foco_teclado and escala_mesmo_perfil_6h
+# existed. Kept apart (own training cohort); the two missing features read as absent.
 
 WINDOWS: dict[str, int] = {"10m": 600, "1h": 3600, "24h": 86400}
 MAX_WINDOW_S = max(WINDOWS.values())
