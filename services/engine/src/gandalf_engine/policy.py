@@ -37,6 +37,17 @@ class Policy:
             return Ator(tipo=TipoAtor.automacao_nao_declarada, confianca=score_automacao)
         return Ator(tipo=TipoAtor.humano, confianca=1.0 - score_automacao)
 
+    @staticmethod
+    def declared(within: bool, fired: list[Rule], fraud: Decisao) -> tuple[Decisao, Acao]:
+        """A verified agent is automation by definition, so the automation model has
+        nothing to say about it. What matters is whether the owner authorised this:
+        inside the mandate it goes through; outside, the owner is asked."""
+        if any(r.decisao is Decisao.negar for r in fired) or fraud is Decisao.negar:
+            return Decisao.negar, Acao.nenhuma
+        if within and fraud is Decisao.aprovar:
+            return Decisao.aprovar, Acao.nenhuma
+        return Decisao.desafiar, Acao.confirmar_fora_da_sessao
+
     def automation_flag(self, score: float, t: Thresholds | None) -> Decisao:
         desafiar = t.desafiar if t else self.desafiar_acima_de
         negar = t.negar if t else self.negar_acima_de

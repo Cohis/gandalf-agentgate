@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 
 from .config import Settings
 from .enrich import Enricher
+from .identity import AgentGate, OperatorDirectory
 from .pipeline import Engine
 from .policy import Policy
 from .rules import load_rules
@@ -32,6 +33,18 @@ def _scorer_or_baseline(settings: Settings) -> Scorer:
     except (ModelError, OSError, KeyError, ValueError) as exc:
         log.warning("active model refused, serving the baseline: %s", exc)
         return HeuristicScorer()
+
+
+async def _keep_keys_fresh(gate: AgentGate) -> None:
+    """Operator and issuer keys are fetched in the background, never per request."""
+    if not gate.directory.urls and not gate.issuer_urls:
+        return
+    import httpx
+
+    async with httpx.AsyncClient(timeout=3) as client:
+        while True:
+            await gate.refresh(client)
+            await asyncio.sleep(60 if not gate.directory.keys else gate.directory.refresh_s)
 
 
 def _fraud_scorer_or_none(settings: Settings) -> Scorer | None:
@@ -68,6 +81,9 @@ def create_app(
             PostgresStorage(settings.database_url) if settings.database_url else NullStorage()
         )
         await st.start()
+        gate = AgentGate(
+            OperatorDirectory(settings.agent_directories), issuer_urls=settings.mandate_issuers
+        )
         app.state.redis = r
         app.state.storage = st
         app.state.engine = Engine(
@@ -79,10 +95,13 @@ def create_app(
             fraud_scorer=_fraud_scorer_or_none(settings),
             policy=Policy.load(settings.policy_path),
             ip_hmac_key=settings.ip_hmac_key,
+            agents=gate,
         )
+        refresher = asyncio.create_task(_keep_keys_fresh(gate), name="gandalf-agent-keys")
         try:
             yield
         finally:
+            refresher.cancel()
             await st.stop()
             await r.aclose()
 

@@ -545,9 +545,12 @@ name = "gandalf-engine"
 version = "0.1.0"
 source = { editable = "services/engine" }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "gandalf-contracts" },
     { name = "gandalf-features" },
+    { name = "http-sf" },
+    { name = "httpx" },
     { name = "lightgbm" },
     { name = "numpy" },
     { name = "psycopg", extra = ["binary", "pool"] },
@@ -558,9 +561,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.162,<1" },
     { name = "gandalf-contracts", editable = "packages/contracts" },
     { name = "gandalf-features", editable = "packages/features" },
+    { name = "http-sf", specifier = ">=1.5" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "lightgbm", specifier = ">=4.7,<5" },
     { name = "numpy", specifier = ">=2" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3,<4" },
@@ -762,6 +768,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/f9/b3885abe8a77c9ab74311eb824d224bd4ec5e3b53f947941a12555d0a57c/hiredis-3.5.0-cp313-cp313-win32.whl", hash = "sha256:5201151dfc4098f81485aeac651cbfb402c8aea92607a5ddef5bbff5097d10e6", size = 38743, upload-time = "2026-10-15T17:59:07.582Z" },
     { url = "https://files.pythonhosted.org/packages/34/d9/a6bfa649cc1be25a3cbbc180a4fd77d91d57382a4f3335407cf705e4def1/hiredis-3.5.0-cp313-cp313-win_amd64.whl", hash = "sha256:1ad14a185ece13a456dd8da27b7acd4105b4a2fccbdf54d86a3d455d6df7ffae", size = 40615, upload-time = "2026-10-15T17:59:08.584Z" },
     { url = "https://files.pythonhosted.org/packages/fa/95/fe6e3ada77b59c440ee212d00667336ecfc8957443a0384aefeb0ba0debf/hiredis-3.5.0-cp313-cp313-win_arm64.whl", hash = "sha256:0f09667f00035ccfb83b942018b5e84dc560774372fb237b9f7f757d72603c37", size = 38070, upload-time = "2026-10-15T17:59:09.759Z" },
+]
+
+[[package]]
+name = "http-sf"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/d1/af2d7665a9cb295f95a4125826a45443bd6f554946d1ca9876cf3ef1dc3b/http_sf-1.5.0.tar.gz", hash = "sha256:b54cfa55f428dd7cb1cfcc6fbd5020f967060df136ffa37cab5b9798f647612f", size = 55553, upload-time = "2026-10-23T01:43:58.992Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/4a/5a1d3b0fcb58cbd827a968f69d6139c1af419dd008f2c4caf8a8ab78b7bd/http_sf-1.5.0-py3-none-any.whl", hash = "sha256:031282bd376549b04fcaa397d9ef351acdc5bd383435cccd1d8ea17b1661c80e", size = 27696, upload-time = "2026-10-23T01:43:57.816Z" },
 ]
 
 [[package]]

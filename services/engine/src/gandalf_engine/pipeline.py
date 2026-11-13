@@ -12,7 +12,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 
-from gandalf_contracts import AssessRequest, AssessResponse, Decisao, Evento
+from gandalf_contracts import AssessRequest, AssessResponse, Ator, Decisao, Evento, TipoAtor
 from gandalf_features import (
     FEATURE_VERSION,
     ScaleWindow,
@@ -26,6 +26,7 @@ from redis.exceptions import RedisError
 
 from .enrich import Enricher, ip_hmac, ip_prefix, ua_family
 from .explain import reasons
+from .identity import AgentGate, Declaration, OperatorDirectory
 from .policy import Policy
 from .rules import Rule, evaluate
 from .scoring import Scorer
@@ -33,6 +34,16 @@ from .state import RedisStateStore
 from .storage import Record, Storage
 
 log = logging.getLogger("gandalf.pipeline")
+
+OUTSIDE_PT = {
+    "no mandate from the account owner": "sem mandato do titular",
+    "mandate rejected": "mandato inválido",
+    "mandate revoked by the owner": "mandato revogado pelo titular",
+    "mandate granted to another agent": "mandato concedido a outro agente",
+    "mandate is for another account": "mandato de outra conta",
+    "value above the per-purchase limit": "valor acima do limite por compra",
+    "the mandate's total budget is used up": "orçamento total do mandato esgotado",
+}
 
 _BUCKETS_MS = (1, 2, 5, 10, 20, 50, 100, 250, 1000)
 
@@ -86,6 +97,7 @@ class Engine:
         fraud_scorer: Scorer | None = None,
         policy: Policy,
         ip_hmac_key: str,
+        agents: AgentGate | None = None,
     ) -> None:
         self._redis = redis
         self._state = RedisStateStore(redis)
@@ -98,6 +110,7 @@ class Engine:
         self.scale = ScaleWindow()
         self._policy = policy
         self._ip_hmac_key = ip_hmac_key
+        self.agents = agents or AgentGate(OperatorDirectory(()))
         self.metrics = Metrics()
 
     async def assess(self, req: AssessRequest) -> AssessResponse:
@@ -144,12 +157,35 @@ class Engine:
         t_fraude = fraud_scorer.thresholds if fraud_scorer else None
         lap("modelo")
 
-        decisao, acao = self._policy.decide(
-            score, fired, scorer.thresholds, score_fraude=score_fraude, t_fraude=t_fraude
-        )
-        ator = self._policy.actor(score, scorer.thresholds)
+        decl = Declaration()
+        if req.assinatura_agente is not None:
+            try:
+                decl = await self.agents.check(req, self._redis)
+            except RedisError:  # cannot rule out a replay: treat as not declared
+                decl = Declaration(rejected="replay check unavailable")
+        lap("identidade")
+
         motivos = [r.motivo for r in fired]
-        if decisao is not Decisao.aprovar:
+        if decl.agent is not None:
+            decisao, acao = self._policy.declared(
+                decl.outside is None, fired, self._policy.fraud_flag(score_fraude, t_fraude)
+            )
+            ator = Ator(tipo=TipoAtor.agente_declarado, confianca=1.0)
+            if decl.outside is None:
+                motivos.append("agente declarado e verificado, agindo dentro do mandato do titular")
+            else:
+                why = OUTSIDE_PT.get(decl.outside.split(":")[0], decl.outside)
+                motivos.append(f"agente declarado e verificado, mas fora do mandato: {why}")
+            if decisao is Decisao.aprovar and decl.mandate and req.evento is Evento.checkout:
+                await AgentGate.record_spend(self._redis, decl.mandate, float(req.valor or 0.0))
+        else:
+            decisao, acao = self._policy.decide(
+                score, fired, scorer.thresholds, score_fraude=score_fraude, t_fraude=t_fraude
+            )
+            ator = self._policy.actor(score, scorer.thresholds)
+            if decl.rejected:
+                motivos.append("assinatura de agente apresentada, mas inválida")
+        if decisao is not Decisao.aprovar and decl.agent is None:
             explain = []
             if self._policy.automation_flag(score, scorer.thresholds) is not Decisao.aprovar:
                 explain += reasons(features, contributions)
