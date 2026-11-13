@@ -8,6 +8,7 @@ validate -> (agent identity) -> enrich IP -> read windows -> features
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -44,6 +45,15 @@ OUTSIDE_PT = {
     "value above the per-purchase limit": "valor acima do limite por compra",
     "the mandate's total budget is used up": "orçamento total do mandato esgotado",
 }
+
+
+
+def outside_pt(outside: str) -> str:
+    """Why an action falls outside the mandate, in the visitor-facing language."""
+    if m := re.match(r"'(\w+)' not in the mandate", outside):
+        return f"ação '{m[1]}' não autorizada no mandato"
+    return OUTSIDE_PT.get(outside.split(":")[0], outside)
+
 
 _BUCKETS_MS = (1, 2, 5, 10, 20, 50, 100, 250, 1000)
 
@@ -174,7 +184,7 @@ class Engine:
             if decl.outside is None:
                 motivos.append("agente declarado e verificado, agindo dentro do mandato do titular")
             else:
-                why = OUTSIDE_PT.get(decl.outside.split(":")[0], decl.outside)
+                why = outside_pt(decl.outside)
                 motivos.append(f"agente declarado e verificado, mas fora do mandato: {why}")
             if decisao is Decisao.aprovar and decl.mandate and req.evento is Evento.checkout:
                 await AgentGate.record_spend(self._redis, decl.mandate, float(req.valor or 0.0))
