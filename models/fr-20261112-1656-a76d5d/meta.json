@@ -1,42 +1,19 @@
 {
-  "versao": "20261112-0951-fc0c2f",
-  "alvo": "automacao",
+  "versao": "fr-20261112-1656-a76d5d",
+  "alvo": "fraude",
   "versao_features": "f2",
   "features": [
-    "tel_coletada",
-    "webdriver",
-    "inconsistencias_fp",
-    "ua_vazio",
-    "ua_movel",
-    "ua_automacao",
-    "ja4_ausente",
     "rede_residencial",
     "rede_movel",
     "rede_datacenter",
     "rede_tor",
     "ip_em_lista",
     "ip_reputacao",
-    "ritmo_n",
-    "ritmo_cv",
-    "ritmo_p90_p50",
-    "cursor_linear",
-    "cliques_centro",
-    "toque",
-    "digitacao_colada",
-    "digitacao_constante",
-    "digitacao_humana",
-    "digitacao_ausente",
-    "sessao_paginas",
-    "sessao_desvios",
-    "sessao_voltas",
-    "honeypot",
-    "canario",
     "evento_cadastro",
     "evento_login",
     "evento_checkout",
     "evento_adicionar_carrinho",
     "valor",
-    "agente_declarado",
     "ev_disp_10m",
     "ev_disp_1h",
     "ev_disp_24h",
@@ -63,23 +40,27 @@
     "cartoes_por_ip_24h"
   ],
   "calibracao": {
-    "a": 2.536560861953307,
-    "b": 0.7141228919853275
+    "a": 0.7180304816131777,
+    "b": 1.0908202082979839
   },
   "limiares": {
-    "desafiar": 0.2916003884902683,
-    "negar": 0.99
+    "desafiar": 0.7923901221900601,
+    "negar": 0.9734069396323509
   },
-  "arvores": 8,
+  "custos": {
+    "custo_fn": 20.0,
+    "custo_fp": 5.0,
+    "custo_desafio": 0.5,
+    "desafio_barra": 0.8,
+    "prevalencia_fraude": 0.02
+  },
   "metricas": {
-    "pr_auc_teste": 0.9999659898649798,
-    "recall_teste": 1.0,
-    "fpr_teste": 0.015306122448979591,
-    "recall_nivel2_sem_ver_nivel2": 0.0,
-    "linhas": {
-      "treino": 1495,
-      "validacao": 507,
-      "teste": 438
+    "pr_auc_teste": 0.9500589578001344,
+    "custo_por_mil": {
+      "nada": 400.0,
+      "so_automacao": 237.13352259925196,
+      "so_fraude": 209.31608910519282,
+      "ambos": 152.68862752166794
     }
   }
 }
