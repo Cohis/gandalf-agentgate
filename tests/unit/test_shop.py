@@ -18,6 +18,7 @@ class FakeEngine:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.labels: list[dict[str, Any]] = []
+        self.revoked: list[str] = []
         self.decisao = "aprovar"
         self.down = False
 
@@ -25,6 +26,9 @@ class FakeEngine:
         if self.down:
             raise httpx.ConnectError("engine down")
         assert request.headers["x-gandalf-key"] == "k"
+        if request.url.path.startswith("/mandatos/"):
+            self.revoked.append(request.url.path.split("/")[2])
+            return httpx.Response(200, json={"estado": "revogado"})
         if request.url.path == "/rotulos":
             self.labels += json.loads(request.content)["rotulos"]
             return httpx.Response(200, json={"recebidos": 1})
@@ -389,3 +393,78 @@ def test_cart_shows_formatted_totals_and_items_can_be_removed(engine: FakeEngine
     assert c.post("/carrinho/remover", data={"pid": "p5"}).status_code == 303
     cart = c.get("/carrinho").text
     assert "R$ 189,00" in cart and "Tênis" not in cart
+
+
+# ------------------------------------------------------------- phase 5: agents
+
+
+def test_agent_signature_and_mandate_are_passed_to_the_engine(engine: FakeEngine) -> None:
+    c = make(engine)
+    headers = {
+        "Signature": "sig1=:abc=:",
+        "Signature-Input": 'sig1=("@authority");tag="web-bot-auth"',
+        "Signature-Agent": 'sig1="http://agent-operator:8090"',
+        "X-Mandato": "a.b.c",
+    }
+    c.post("/cadastro", data={"nome": "A", "email": "q@example.com", "senha": "segredo1"},
+           headers=headers)  # fmt: skip
+    a = engine.calls[0]["assinatura_agente"]
+    assert a["metodo"] == "POST" and a["caminho"] == "/cadastro" and a["autoridade"]
+    assert engine.calls[0]["mandato"] == "a.b.c"
+    signup(c, email="r@example.com")
+    assert engine.calls[1]["assinatura_agente"] is None and engine.calls[1]["mandato"] is None
+
+
+def test_owner_grants_and_revokes_a_mandate(engine: FakeEngine) -> None:
+    from gandalf_contracts.keys import key_from_jwk, unb64u
+
+    c = make(engine)
+    assert c.get("/conta/agentes").headers["location"] == "/login"
+    signup(c)
+    form = {"agente": "K" * 43, "limite_valor": "100", "limite_acumulado": "300",
+            "horas": "2", "escopo": ["checkout", "login"]}  # fmt: skip
+    assert c.post("/conta/agentes", data=form | {"senha": "errada"}).status_code == 400
+    page = c.post("/conta/agentes", data=form | {"senha": "segredo1"})
+    assert page.status_code == 200 and "Mandato criado" in page.text
+    acct = c.app.state.accounts["a@example.com"]  # type: ignore[attr-defined]
+    m = acct.mandates[0]
+    assert m["escopo"] == ["checkout", "login"] and m["sub"] == acct.id
+
+    pub = c.get("/.well-known/gandalf-mandato").json()
+    h64, p64, s64 = m["token"].split(".")
+    key_from_jwk(pub["jwk"]).verify(unb64u(s64), f"{h64}.{p64}".encode())  # really signed
+
+    assert c.post(f"/conta/agentes/{m['jti']}/revogar").status_code == 303
+    assert engine.revoked == [m["jti"]] and m["revogado"] is True
+
+
+def test_challenge_by_email_link_then_the_action_goes_through(engine: FakeEngine) -> None:
+    c = make(engine, lab_mode=True)
+    engine.decisao = "desafiar"
+    r = signup(c)
+    assert r.status_code == 401 and "a***@example.com" in r.text  # out-of-session link sent
+    assert "a@example.com" not in c.app.state.accounts  # type: ignore[attr-defined]
+    box = c.get("/caixa-postal", params={"email": "a@example.com"}).text
+    link = box.split('href="/confirmar/')[1].split('"')[0]
+    assert "Confirmado" in c.get(f"/confirmar/{link}").text
+    assert c.get(f"/confirmar/{link}").status_code == 404  # single use
+    assert signup(c).status_code == 303  # same session, owner confirmed: goes through
+    assert "a@example.com" in c.app.state.accounts  # type: ignore[attr-defined]
+
+
+def test_mailbox_does_not_exist_outside_the_lab_and_denial_is_final(engine: FakeEngine) -> None:
+    c = make(engine)
+    assert c.get("/caixa-postal", params={"email": "a@example.com"}).status_code == 404
+    engine.decisao = "negar"
+    assert signup(c).status_code == 403
+
+
+def test_passkey_challenge_needs_a_registered_passkey(engine: FakeEngine) -> None:
+    c = make(engine)
+    signup(c)  # approved, logged in
+    assert c.post("/desafio/ds_1/opcoes").status_code == 400  # no passkey yet
+    assert c.post("/desafio/ds_1/confirmar", content=b"{}").status_code == 400
+    opts = c.post("/conta/passkey/opcoes").json()
+    assert opts["rp"]["id"] == "testserver" and opts["challenge"]
+    bad = c.post("/conta/passkey/registrar", content=b'{"id":"x"}')
+    assert bad.status_code == 400  # a forged registration is refused

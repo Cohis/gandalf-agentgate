@@ -10,6 +10,7 @@ browser never talks to the engine.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -25,12 +26,16 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
+import webauthn
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from gandalf_contracts import AssessRequest, AssessResponse, Decisao, Evento, Telemetria
+from gandalf_contracts import Acao, AssessRequest, AssessResponse, Decisao, Evento, Telemetria
+from gandalf_contracts.keys import issue_mandate, private_from_b64u, public_jwk, thumbprint
 from pydantic import ValidationError
+from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
 log = logging.getLogger("gandalf.shop")
 _HERE = Path(__file__).parent
@@ -212,6 +217,7 @@ class Settings:
     # Shadow mode: ask the engine and record its verdict, but never block. This is how
     # training data is collected: blocking would censor everything an attacker does next.
     shadow: bool = False
+    mandate_key: str = ""  # base64url Ed25519 private key; empty = a fresh one per start
     # Recording mode: real people, with consent, produce labelled human sessions.
     recording: bool = False
     # Public recording through a tunnel: the whole shop sits behind an invite code,
@@ -232,6 +238,7 @@ class Settings:
             lab_mode=e.get("SHOP_LAB_MODE", "0") == "1",
             fail_open=e.get("SHOP_FAIL_OPEN", "1") == "1",
             shadow=e.get("SHOP_SHADOW", "0") == "1",
+            mandate_key=e.get("SHOP_MANDATE_KEY", ""),
             recording=e.get("SHOP_RECORDING", "0") == "1",
             invite_code=e.get("SHOP_INVITE_CODE", "").strip(),
             tunnel=e.get("SHOP_TUNNEL", "0") == "1",
@@ -247,6 +254,8 @@ class Session:
     rec: str | None = None  # participant code when this is a recorded human session
     rec_ip: str | None = None
     rec_n: int = 0
+    verificada_ate: float = 0.0  # the owner proved it is them (passkey or e-mail link)
+    webauthn_challenge: bytes | None = None
 
 
 @dataclass(slots=True)
@@ -257,6 +266,24 @@ class Account:
     salt: bytes
     pw_hash: bytes
     orders: int = 0
+    mandates: list[dict[str, Any]] = field(default_factory=list)
+    passkeys: list[dict[str, Any]] = field(default_factory=list)  # id, public_key, sign_count
+
+
+def agent_signature(request: Request) -> dict[str, str] | None:
+    """Web Bot Auth headers, passed to the engine with what the signature covers. The
+    shop does not verify them itself: the engine decides who is acting."""
+    h = request.headers
+    if not all(h.get(k) for k in ("signature", "signature-input", "signature-agent")):
+        return None
+    return {
+        "signature": h["signature"][:2048],
+        "signature_input": h["signature-input"][:2048],
+        "signature_agent": h["signature-agent"][:1024],
+        "metodo": request.method,
+        "autoridade": h.get("host", "")[:255] or "desconhecido",
+        "caminho": request.url.path[:2048],
+    }
 
 
 def _hash_pw(password: str, salt: bytes) -> bytes:
@@ -330,6 +357,13 @@ def create_app(
     tpl = Jinja2Templates(directory=_HERE / "templates")
     tpl.env.filters["brl"] = brl
     client = http or httpx.AsyncClient(base_url=s.engine_url, timeout=s.engine_timeout_s)
+
+    # The key this shop signs mandates with. Lab default: a new key each start, so
+    # mandates do not survive a restart (documented). Its public half is published.
+    mandate_key = (
+        private_from_b64u(s.mandate_key) if s.mandate_key else Ed25519PrivateKey.generate()
+    )
+    mandate_kid = "loja-" + thumbprint(public_jwk(mandate_key.public_key()))[:12]
 
     sessions: dict[str, Session] = {}
     accounts: dict[str, Account] = {}  # by e-mail
@@ -446,6 +480,8 @@ def create_app(
                         else None
                     ),
                     "telemetria": tel,
+                    "assinatura_agente": agent_signature(request),
+                    "mandato": (request.headers.get("x-mandato") or "")[:8192] or None,
                     "sessao": {
                         "paginas_vistas": len(sess.pages),
                         "segundos_desde_inicio": round(time.monotonic() - sess.started, 3),
@@ -491,16 +527,34 @@ def create_app(
         except httpx.HTTPError:
             log.exception("could not deliver the label for %s", avaliacao_id)
 
-    def gate(request: Request, verdict: AssessResponse | None) -> Response | None:
+    def gate(
+        request: Request, verdict: AssessResponse | None, email: str | None = None
+    ) -> Response | None:
         """None means 'go ahead'. Reasons are never shown to the visitor: they would
         teach an attacker what to change."""
         if s.shadow or verdict is None or verdict.decisao is Decisao.aprovar:
             return None
-        if session_of(request)[1].rec:
+        sid, sess = session_of(request)
+        if sess.rec:
             return None  # a volunteer is never blocked: the verdict is only recorded
-        if verdict.decisao is Decisao.desafiar:
-            return render(request, "desafio.html", status=401, desafio_id=verdict.desafio_id)
-        return render(request, "negado.html", status=403)
+        if verdict.decisao is not Decisao.desafiar:
+            return render(request, "negado.html", status=403)
+        if sess.verificada_ate > time.monotonic():
+            return None  # the owner has just proved it is them in this session
+        acct = logged_in(request)
+        if verdict.acao is Acao.exigir_passkey and acct and acct.passkeys:
+            return render(request, "desafio.html", status=401, modo="passkey",
+                          desafio_id=verdict.desafio_id)  # fmt: skip
+        target = (acct.email if acct else email) or ""
+        if not target:
+            return render(request, "desafio.html", status=401, modo="retido",
+                          desafio_id=verdict.desafio_id)  # fmt: skip
+        token = secrets.token_urlsafe(18)
+        confirmations[token] = {"sid": sid, "email": target, "desafio_id": verdict.desafio_id,
+                                "criado": time.time()}  # fmt: skip
+        masked = target[0] + "***" + target[target.find("@") :] if "@" in target else "***"
+        return render(request, "desafio.html", status=401, modo="email", destino=masked,
+                      desafio_id=verdict.desafio_id, laboratorio=s.lab_mode)  # fmt: skip
 
     # ---------------------------------------------------------------- pages
 
@@ -555,7 +609,7 @@ def create_app(
             tel,
             dados_cadastro={"nome": nome, "email": email, "endereco": endereco, "bio": bio},
         )
-        if blocked := gate(request, verdict):
+        if blocked := gate(request, verdict, email=email):
             return blocked
         if "@" not in email or email in accounts:
             return render(request, "cadastro.html", status=400, erro="E-mail inválido ou em uso.")
@@ -773,6 +827,206 @@ def create_app(
             return render(request, "gravar_fim.html", track=False, total=total, gravacao=None)
         start_recorded_session(request, codigo)
         return RedirectResponse("/gravar/tarefas", status_code=303)
+
+    # ------------------------------------------------------- mandates for agents
+
+    SCOPES = {"login": "Entrar na conta", "adicionar_carrinho": "Pôr no carrinho",
+              "checkout": "Pagar"}  # fmt: skip
+
+    def logged_in(request: Request) -> Account | None:
+        sess = session_of(request)[1]
+        return next((a for a in accounts.values() if a.id == sess.conta_id), None)
+
+    @app.get("/.well-known/gandalf-mandato")
+    async def mandate_public_key() -> dict[str, Any]:
+        return {"kid": mandate_kid, "jwk": public_jwk(mandate_key.public_key())}
+
+    @app.get("/conta/agentes", response_class=HTMLResponse)
+    async def agents_page(request: Request) -> Response:
+        acct = logged_in(request)
+        if not acct:
+            return RedirectResponse("/login", status_code=303)
+        return render(request, "conta_agentes.html", escopos=SCOPES, mandatos=acct.mandates)
+
+    @app.post("/conta/agentes", response_class=HTMLResponse)
+    async def grant_mandate(
+        request: Request,
+        agente: Annotated[str, Form(min_length=20, max_length=64)],
+        senha: Annotated[str, Form(max_length=200)],
+        limite_valor: Annotated[float, Form(gt=0, le=10_000)],
+        limite_acumulado: Annotated[float, Form(gt=0, le=50_000)],
+        horas: Annotated[int, Form(ge=1, le=720)] = 24,
+        escopo: Annotated[list[str] | None, Form()] = None,
+    ) -> Response:
+        acct = logged_in(request)
+        if not acct:
+            return RedirectResponse("/login", status_code=303)
+        escolhidos = [e for e in (escopo or []) if e in SCOPES]
+
+        def again(erro: str) -> Response:
+            return render(request, "conta_agentes.html", status=400, escopos=SCOPES,
+                          mandatos=acct.mandates, erro=erro)  # fmt: skip
+
+        # The owner confirms it is them. Phase 5 adds the passkey; the password is the
+        # fallback for accounts without one.
+        if not hmac.compare_digest(_hash_pw(senha, acct.salt), acct.pw_hash):
+            return again("Senha incorreta: o mandato não foi criado.")
+        if not escolhidos:
+            return again("Escolha pelo menos uma ação que o agente pode fazer.")
+        if limite_acumulado < limite_valor:
+            return again("O limite total não pode ser menor que o limite por compra.")
+        jti = "m_" + secrets.token_hex(8)
+        exp = int(time.time()) + horas * 3600
+        claims = {
+            "jti": jti, "sub": acct.id, "agente": agente.strip(), "escopo": escolhidos,
+            "limite_valor": limite_valor, "limite_acumulado": limite_acumulado, "exp": exp,
+        }  # fmt: skip
+        token = issue_mandate(mandate_key, mandate_kid, claims)
+        acct.mandates.append(claims | {"token": token, "revogado": False})
+        return render(request, "conta_agentes.html", escopos=SCOPES, mandatos=acct.mandates,
+                      novo=token)  # fmt: skip
+
+    @app.post("/conta/agentes/{jti}/revogar")
+    async def revoke_mandate(request: Request, jti: str) -> Response:
+        acct = logged_in(request)
+        if not acct:
+            return RedirectResponse("/login", status_code=303)
+        for m in acct.mandates:
+            if m["jti"] == jti and not m["revogado"]:
+                r = await client.post(
+                    f"/mandatos/{jti}/revogar", headers={"X-Gandalf-Key": s.service_key}
+                )
+                m["revogado"] = r.status_code == 200
+        return RedirectResponse("/conta/agentes", status_code=303)
+
+    # ------------------------------------- passkeys and out-of-session confirmation
+
+    confirmations: dict[str, dict[str, Any]] = {}
+
+    def webauthn_site(request: Request) -> tuple[str, str]:
+        host = request.headers.get("host", "localhost")
+        scheme = "https" if s.behind_proxy else request.url.scheme
+        return host.split(":")[0], f"{scheme}://{host}"
+
+    async def report_challenge(desafio_id: str | None, estado: str) -> None:
+        if not desafio_id:
+            return
+        with contextlib.suppress(httpx.HTTPError):
+            await client.post(
+                f"/desafios/{desafio_id}/resultado",
+                json={"estado": estado},
+                headers={"X-Gandalf-Key": s.service_key},
+            )
+
+    @app.get("/conta/passkey", response_class=HTMLResponse)
+    async def passkey_page(request: Request) -> Response:
+        acct = logged_in(request)
+        if not acct:
+            return RedirectResponse("/login", status_code=303)
+        return render(request, "conta_passkey.html", total=len(acct.passkeys))
+
+    @app.post("/conta/passkey/opcoes")
+    async def passkey_options(request: Request) -> Response:
+        acct = logged_in(request)
+        if not acct:
+            return JSONResponse({"erro": "entre na conta"}, status_code=401)
+        rp_id, _ = webauthn_site(request)
+        opts = webauthn.generate_registration_options(
+            rp_id=rp_id,
+            rp_name="Loja da Montanha",
+            user_id=acct.id.encode(),
+            user_name=acct.email,
+            user_display_name=acct.nome,
+            exclude_credentials=[PublicKeyCredentialDescriptor(id=k["id"]) for k in acct.passkeys],
+        )
+        session_of(request)[1].webauthn_challenge = opts.challenge
+        return Response(webauthn.options_to_json(opts), media_type="application/json")
+
+    @app.post("/conta/passkey/registrar")
+    async def passkey_register(request: Request) -> Response:
+        acct, sess = logged_in(request), session_of(request)[1]
+        if not acct or not sess.webauthn_challenge:
+            return JSONResponse({"erro": "sem desafio pendente"}, status_code=400)
+        rp_id, origin = webauthn_site(request)
+        try:
+            v = webauthn.verify_registration_response(
+                credential=(await request.body()).decode()[:20_000],
+                expected_challenge=sess.webauthn_challenge,
+                expected_rp_id=rp_id,
+                expected_origin=origin,
+            )
+        except Exception:
+            return JSONResponse({"erro": "passkey não verificada"}, status_code=400)
+        finally:
+            sess.webauthn_challenge = None
+        acct.passkeys.append({"id": v.credential_id, "public_key": v.credential_public_key,
+                              "sign_count": v.sign_count})  # fmt: skip
+        return JSONResponse({"ok": True, "total": len(acct.passkeys)})
+
+    @app.post("/desafio/{desafio_id}/opcoes")
+    async def challenge_options(request: Request, desafio_id: str) -> Response:
+        acct = logged_in(request)
+        if not acct or not acct.passkeys:
+            return JSONResponse({"erro": "sem passkey"}, status_code=400)
+        rp_id, _ = webauthn_site(request)
+        opts = webauthn.generate_authentication_options(
+            rp_id=rp_id,
+            allow_credentials=[PublicKeyCredentialDescriptor(id=k["id"]) for k in acct.passkeys],
+        )
+        session_of(request)[1].webauthn_challenge = opts.challenge
+        return Response(webauthn.options_to_json(opts), media_type="application/json")
+
+    @app.post("/desafio/{desafio_id}/confirmar")
+    async def challenge_confirm(request: Request, desafio_id: str) -> Response:
+        """The owner's authenticator answered: whoever holds only the password, or a
+        script driving the browser, cannot produce this."""
+        acct, sess = logged_in(request), session_of(request)[1]
+        if not acct or not sess.webauthn_challenge:
+            return JSONResponse({"erro": "sem desafio pendente"}, status_code=400)
+        body = (await request.body()).decode()[:20_000]
+        rp_id, origin = webauthn_site(request)
+        try:
+            cred_id = webauthn.base64url_to_bytes(json.loads(body)["rawId"])
+            key = next(k for k in acct.passkeys if k["id"] == cred_id)
+            v = webauthn.verify_authentication_response(
+                credential=body,
+                expected_challenge=sess.webauthn_challenge,
+                expected_rp_id=rp_id,
+                expected_origin=origin,
+                credential_public_key=key["public_key"],
+                credential_current_sign_count=key["sign_count"],
+            )
+        except Exception:
+            await report_challenge(desafio_id, "falhou")
+            return JSONResponse({"erro": "passkey não confere"}, status_code=400)
+        finally:
+            sess.webauthn_challenge = None
+        key["sign_count"] = v.new_sign_count
+        sess.verificada_ate = time.monotonic() + 600
+        await report_challenge(desafio_id, "aprovado")
+        return JSONResponse({"ok": True})
+
+    @app.get("/caixa-postal", response_class=HTMLResponse)
+    async def mailbox(request: Request, email: str = "") -> Response:
+        """Lab only: stands in for the owner's e-mail, a channel outside this session."""
+        if not s.lab_mode:
+            return render(request, "negado.html", status=404, track=False, titulo="Não encontrado")
+        email = email.strip().lower()[:200]
+        msgs = [
+            {"token": t, **c} for t, c in confirmations.items() if email and c["email"] == email
+        ]
+        return render(request, "caixa_postal.html", track=False, email=email, mensagens=msgs)
+
+    @app.get("/confirmar/{token}", response_class=HTMLResponse)
+    async def confirm_link(request: Request, token: str) -> Response:
+        c = confirmations.pop(token, None)
+        if not c or time.time() - c["criado"] > 1800:
+            return render(request, "negado.html", status=404, track=False,
+                          titulo="Link inválido ou expirado")  # fmt: skip
+        if c["sid"] in sessions:
+            sessions[c["sid"]].verificada_ate = time.monotonic() + 600
+        await report_challenge(c["desafio_id"], "aprovado")
+        return render(request, "confirmado.html", track=False)
 
     @app.get("/saude")
     async def health() -> dict[str, bool]:

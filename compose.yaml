@@ -45,6 +45,9 @@ services:
       GANDALF_DATABASE_URL: postgresql://gandalf:${POSTGRES_PASSWORD:-gandalf}@postgres:5432/gandalf
       GANDALF_IP_HMAC_KEY: ${GANDALF_IP_HMAC_KEY:-dev-only-change-me}
       GANDALF_MODEL_DIR: /models
+      # allowlists: the engine fetches keys only from these, never from a request
+      GANDALF_AGENT_DIRECTORIES: http://agent-operator:8090
+      GANDALF_MANDATE_ISSUERS: http://shop:8080,http://shop-sim:8080
       OMP_NUM_THREADS: "1"   # one row per request: threads only add overhead
     volumes:
       - ./models:/models:ro
@@ -122,6 +125,18 @@ services:
     ports: ["127.0.0.1:8444:8443"]
     volumes: ["certs-sim:/certs"]
     mem_limit: 64m
+
+  # Phase 5: the operator of a legitimate, declared agent. It only publishes the
+  # agent's public keys; the private key stays with the agent (data/agente/, not in git).
+  agent-operator:
+    build: { context: ., dockerfile: docker/agent-operator.Dockerfile }
+    volumes: ["./data/agente:/keys:ro"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/saude', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    mem_limit: 48m
 
   dashboard:
     build: { context: ., dockerfile: docker/dashboard.Dockerfile }

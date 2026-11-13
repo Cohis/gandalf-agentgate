@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titulo %}Caixa postal de teste | Loja da Montanha{% endblock %}
+{% block conteudo %}
+<div class="cartao media">
+  <h1>Caixa postal de teste</h1>
+  <p class="muted">Só existe no laboratório: faz o papel do e-mail do titular, um canal fora da sessão.</p>
+  <form class="pilha" method="get" action="/caixa-postal">
+    <label>E-mail <input type="email" name="email" value="{{ email }}" required></label>
+    <button type="submit">Ver mensagens</button>
+  </form>
+  {% for m in mensagens %}
+  <div class="tarefa"><p>Alguém tentou uma ação na sua conta. Foi você?</p>
+    <p><a class="botao" href="/confirmar/{{ m.token }}">Sim, fui eu</a></p></div>
+  {% else %}
+  {% if email %}<p>Nenhuma mensagem para este endereço.</p>{% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

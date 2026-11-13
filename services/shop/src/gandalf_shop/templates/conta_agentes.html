@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titulo %}Agentes autorizados | Loja da Montanha{% endblock %}
+{% block conteudo %}
+<div class="cartao media">
+  <h1>Agentes autorizados</h1>
+  <p>Um agente de IA pode comprar por você, mas só dentro dos limites que você definir aqui.
+  Fora deles, a loja pede a sua confirmação. Você pode revogar a autorização a qualquer momento.</p>
+  {% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+  {% if novo %}
+  <div class="tarefa">
+    <p><strong>Mandato criado.</strong> Entregue este código ao seu agente:</p>
+    <p><code style="word-break: break-all;">{{ novo }}</code></p>
+  </div>
+  {% endif %}
+  <form class="pilha" method="post" action="/conta/agentes">
+    <label>Identificador do agente <span class="dica">O agente mostra esse código (keyid)</span>
+      <input type="text" name="agente" required minlength="20" maxlength="64" autocomplete="off"></label>
+    <fieldset class="pilha" style="border:0; padding:0; margin:0;">
+      <legend><strong>O que o agente pode fazer</strong></legend>
+      {% for k, v in escopos.items() %}
+      <label class="aceite"><input type="checkbox" name="escopo" value="{{ k }}" checked> {{ v }}</label>
+      {% endfor %}
+    </fieldset>
+    <label>Limite por compra (R$) <input type="text" name="limite_valor" inputmode="decimal" value="200" required></label>
+    <label>Limite total (R$) <input type="text" name="limite_acumulado" inputmode="decimal" value="500" required></label>
+    <label>Validade (horas) <input type="text" name="horas" inputmode="numeric" value="24" required></label>
+    <label>Confirme com a sua senha <input type="password" name="senha" autocomplete="current-password" required></label>
+    <button type="submit">Autorizar agente</button>
+  </form>
+  {% if mandatos %}
+  <h2>Autorizações</h2>
+  <ul class="itens">
+    {% for m in mandatos %}
+    <li class="item" style="grid-template-columns: 1fr auto;">
+      <div>
+        <p class="nome">Agente {{ m.agente[:12] }}…</p>
+        <p class="muted">{{ m.escopo|join(", ") }} · até R$ {{ m.limite_valor|brl }} por compra, R$ {{ m.limite_acumulado|brl }} no total</p>
+      </div>
+      {% if m.revogado %}<span class="muted">Revogado</span>{% else %}
+      <form method="post" action="/conta/agentes/{{ m.jti }}/revogar"><button class="secundario" type="submit">Revogar</button></form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endblock %}

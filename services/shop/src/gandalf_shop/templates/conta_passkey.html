@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Passkey | Loja da Montanha{% endblock %}
+{% block conteudo %}
+<div class="cartao media">
+  <h1>Passkey</h1>
+  <p>Uma passkey fica no seu celular ou computador e confirma que é você, sem senha. Quando a
+  loja suspeitar de um robô usando a sua conta, ela pede a passkey: um robô não tem o seu aparelho.</p>
+  <p>Passkeys cadastradas: <strong>{{ total }}</strong></p>
+  <p><button type="button" data-passkey="registrar">Criar passkey neste aparelho</button></p>
+  <p id="passkey-status" role="status"></p>
+  <p><a href="/conta/agentes">Agentes autorizados</a></p>
+</div>
+<script src="/static/passkey.js" defer></script>
+{% endblock %}

@@ -118,6 +118,14 @@ def create_app(
     async def avaliar(req: AssessRequest, request: Request) -> AssessResponse:
         return await request.app.state.engine.assess(req)
 
+    @app.post("/mandatos/{jti}/revogar", dependencies=[Auth])
+    async def revogar(jti: str, request: Request) -> dict[str, str]:
+        """The account owner withdrew a mandate: from now on it authorises nothing."""
+        if not (1 <= len(jti) <= 64):
+            raise HTTPException(status_code=422, detail="jti inválido")
+        await request.app.state.redis.sadd("mandatos:revogados", jti)
+        return {"jti": jti, "estado": "revogado"}
+
     @app.post("/rotulos", dependencies=[Auth])
     async def rotulos(batch: LabelBatch, request: Request) -> dict[str, int]:
         return {"recebidos": await request.app.state.storage.add_labels(list(batch.rotulos))}

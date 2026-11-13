@@ -3,9 +3,18 @@
 {% block conteudo %}
 <div class="cartao media">
   <h1>Confirme que é você</h1>
-  <p>Para continuar, precisamos de uma confirmação no seu aparelho (passkey).</p>
+  {% if modo == "passkey" %}
+  <p>Para continuar, confirme com a passkey do seu aparelho.</p>
+  <p><button type="button" data-passkey="confirmar" data-desafio="{{ desafio_id }}">Confirmar com passkey</button></p>
+  <p id="passkey-status" role="status"></p>
+  <script src="/static/passkey.js" defer></script>
+  {% elif modo == "email" %}
+  <p>Enviamos um link de confirmação para <strong>{{ destino }}</strong>. Abra o link e depois refaça a ação.</p>
+  {% if laboratorio %}<p class="muted">Loja de laboratório: o e-mail chega na <a href="/caixa-postal">caixa postal de teste</a>.</p>{% endif %}
+  {% else %}
+  <p>Não foi possível concluir esta ação agora. Tente de novo mais tarde.</p>
+  {% endif %}
   <p class="muted">Código da verificação: {{ desafio_id }}</p>
-  <p class="muted">A confirmação por passkey entra na fase 5 do projeto. Por enquanto a ação fica retida.</p>
   <p><a href="/">Voltar ao catálogo</a></p>
 </div>
 {% endblock %}

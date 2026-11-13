@@ -20,6 +20,8 @@
       <a href="/">Início</a>
       <a href="/sobre">Sobre</a>
       {% if conta %}
+        <a href="/conta/passkey">Passkey</a>
+        <a href="/conta/agentes">Agentes</a>
         <span class="muted">Olá, {{ conta.nome }}</span>
         <form method="post" action="/sair"><button class="link" type="submit">Sair</button></form>
       {% else %}
