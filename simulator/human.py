@@ -109,9 +109,18 @@ class Human:
             await asyncio.sleep(delay)
         self.pos = to
 
+    async def tab_to(self, loc: Any) -> None:
+        """Reach an element the way a keyboard or screen-reader user does: Tab, Tab..."""
+        for _ in range(60):
+            if await loc.evaluate("e => e === document.activeElement"):
+                return
+            await self.page.keyboard.press("Tab")
+            await asyncio.sleep(self.rng.uniform(0.08, 0.35))
+        await loc.focus()  # unreachable by Tab (should not happen in this shop)
+
     async def click(self, loc: Any) -> None:
         if self.p.keyboard_only:
-            await loc.focus()
+            await self.tab_to(loc)
             await asyncio.sleep(self.rng.uniform(0.15, 0.5))
             await self.page.keyboard.press("Enter")
             return
@@ -138,7 +147,7 @@ class Human:
 
     async def focus(self, loc: Any) -> None:
         if self.p.keyboard_only:
-            await loc.focus()
+            await self.tab_to(loc)
         else:
             await self.click(loc)
         await asyncio.sleep(self.rng.uniform(0.15, 0.6))

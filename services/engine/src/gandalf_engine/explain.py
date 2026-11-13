@@ -119,17 +119,75 @@ _PHRASES: dict[str, Phrase] = {
 }
 
 
+_DIM = {
+    "disp": "deste dispositivo",
+    "ip": "deste IP",
+    "conta": "desta conta",
+    "cartao": "com este cartão",
+}
+_WIN = {"10m": "10 min", "1h": "1 h", "24h": "24 h"}
+_DISTINCT = {
+    "contas_por_disp": "contas distintas neste dispositivo",
+    "contas_por_ip": "contas distintas neste IP",
+    "disps_por_conta": "dispositivos diferentes nesta conta",
+    "cartoes_por_disp": "cartões distintos neste dispositivo",
+    "cartoes_por_ip": "cartões distintos neste IP",
+}
+
+
+def _velocity(name: str) -> Phrase | None:
+    """Phrases for the windowed counts, built from the feature name."""
+    stem, _, win = name.rpartition("_")
+    if win not in _WIN:
+        return None
+    if stem.startswith("ev_") and stem[3:] in _DIM:
+        dim = _DIM[stem[3:]]
+        return lambda f: f"{_n(f, name):.0f} eventos {dim} em {_WIN[win]}"
+    if stem in _DISTINCT:
+        text = _DISTINCT[stem]
+        return lambda f: f"{_n(f, name):.0f} {text} em {_WIN[win]}"
+    if stem == "cadastros_ip":
+        return lambda f: f"{_n(f, name):.0f} cadastros deste IP em {_WIN[win]}"
+    return None
+
+
+_SCALE: dict[str, Phrase] = {
+    "escala_mesmo_perfil_6h": lambda f: (
+        f"{_n(f, 'escala_mesmo_perfil_6h'):.0f} cadastros nas últimas 6 h preenchidos exatamente "
+        "no mesmo formato"
+    ),
+    "escala_mesmo_endereco_6h": lambda f: (
+        f"{_n(f, 'escala_mesmo_endereco_6h'):.0f} cadastros nas últimas 6 h com o endereço escrito "
+        "no mesmo formato"
+    ),
+    "escala_mesmo_email_6h": lambda f: (
+        f"{_n(f, 'escala_mesmo_email_6h'):.0f} cadastros nas últimas 6 h com e-mail "
+        "no mesmo formato"
+    ),
+    "escala_semelhantes_6h": lambda f: (
+        f"{_n(f, 'escala_semelhantes_6h'):.0f} cadastros nas últimas 6 h com bio parecida"
+    ),
+    "escala_cadastros_6h": lambda f: (
+        f"{_n(f, 'escala_cadastros_6h'):.0f} cadastros na loja nas últimas 6 h, acima do normal"
+    ),
+    "foco_teclado": lambda f: None,  # it protects keyboard users; never a reason against
+    "toque": lambda f: None,
+    "ua_movel": lambda f: None,
+}
+
+
 def reasons(f: FeatureVector, contributions: Contributions, top: int = 3) -> list[str]:
     ranked = sorted(contributions.items(), key=lambda kv: kv[1], reverse=True)
     out: list[str] = []
     for name, weight in ranked:
         if weight <= 0 or len(out) >= top:
             break
-        phrase = _PHRASES.get(name)
+        if name.startswith("evento_"):
+            continue  # which page it is says nothing about who is acting
+        phrase = _PHRASES.get(name) or _SCALE.get(name) or _velocity(name)
         text = phrase(f) if phrase else None
         if text is None:
-            value = f.get(name)
-            text = f"sinal '{name}' = {'ausente' if value is None else f'{value:g}'}"
+            continue  # better no reason than an unreadable one
         if text not in out:  # several rhythm features share one sentence
             out.append(text)
-    return out
+    return out or ["combinação de sinais acima do esperado"]

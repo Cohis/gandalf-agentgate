@@ -33,7 +33,7 @@ from .scale import (
     text_of,
 )
 
-FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*
+FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*, foco_teclado
 # Feature sets that f3 only extends: every feature they define is computed exactly the
 # same way in f3, so a model trained on them can still be served.
 COMPATIBLE_VERSIONS = frozenset({"f2", "f3"})
@@ -197,6 +197,7 @@ def compute(
     f["cliques_centro"] = t.cliques_no_centro
     f["toque"] = t.toque
     f["toque_area"] = t.area_toque
+    f["foco_teclado"] = t.foco_teclado
     for d in Digitacao:
         f[f"digitacao_{d.value}"] = float(t.digitacao is d)
 

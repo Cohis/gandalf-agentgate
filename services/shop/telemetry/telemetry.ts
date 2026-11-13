@@ -16,15 +16,15 @@
   // Carried across page loads so a multi-page session has a rhythm. Aggregates only.
   interface Carry {
     acts: number[]; last: number; lin: number[]; clicks: number; center: number;
-    downs: number; touch: number; area: number;
+    downs: number; touch: number; area: number; kbd: number; prog: number;
   }
   const carry: Carry = (() => {
     try {
       const raw = sessionStorage.getItem(KEY);
       // state saved by an older script has no touch counters
-      if (raw) return Object.assign({ downs: 0, touch: 0, area: 0 }, JSON.parse(raw)) as Carry;
+      if (raw) return Object.assign({ downs: 0, touch: 0, area: 0, kbd: 0, prog: 0 }, JSON.parse(raw)) as Carry;
     } catch { /* storage blocked: start fresh */ }
-    return { acts: [], last: 0, lin: [], clicks: 0, center: 0, downs: 0, touch: 0, area: 0 };
+    return { acts: [], last: 0, lin: [], clicks: 0, center: 0, downs: 0, touch: 0, area: 0, kbd: 0, prog: 0 };
   })();
 
   const save = () => {
@@ -114,6 +114,16 @@
       carry.area += Math.min(Math.max(e.width || 0, e.height || 0), 500);
     }
   }, true);
+  // How focus moves when it is not a click: a keyboard or screen-reader user presses
+  // Tab; a script sets focus in code. Without this, navigating without a mouse looks
+  // exactly like a bot that never moved one.
+  let lastTab = -Infinity;
+  addEventListener("keydown", (e) => { if (e.key === "Tab") lastTab = performance.now(); }, true);
+  addEventListener("focusin", () => {
+    const now = performance.now();
+    if (now - lastPointerDown <= 1000) return;
+    if (now - lastTab < 500) carry.kbd++; else carry.prog++;
+  }, true);
   addEventListener("focusin", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       lastKey = 0; // a pause between fields is not typing cadence
@@ -168,6 +178,7 @@
     cliques_no_centro: carry.clicks ? Math.round((carry.center / carry.clicks) * 1000) / 1000 : null,
     toque: carry.downs ? Math.round((carry.touch / carry.downs) * 1000) / 1000 : null,
     area_toque: carry.touch ? Math.round((carry.area / carry.touch) * 10) / 10 : null,
+    foco_teclado: carry.kbd + carry.prog ? Math.round((carry.kbd / (carry.kbd + carry.prog)) * 1000) / 1000 : null,
     digitacao: typing(),
     webdriver: navigator.webdriver === true,
     inconsistencias_fingerprint: fpIssues,

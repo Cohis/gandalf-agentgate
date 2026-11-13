@@ -67,6 +67,9 @@ class Telemetria(Strict):
     # A phone user has no cursor path; without this, that looks exactly like a script.
     toque: Fraction | None = None
     area_toque: Annotated[float, Field(ge=0, le=500)] | None = None  # mean contact size, px
+    # Share of non-click focus changes made with the Tab key (None: focus never moved
+    # without a click). Screen-reader users tab; scripts set focus in code.
+    foco_teclado: Fraction | None = None
     digitacao: Digitacao = Digitacao.ausente
     webdriver: bool = False
     inconsistencias_fingerprint: Annotated[int, Field(ge=0, le=50)] = 0
