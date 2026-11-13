@@ -45,12 +45,14 @@ services:
       GANDALF_DATABASE_URL: postgresql://gandalf:${POSTGRES_PASSWORD:-gandalf}@postgres:5432/gandalf
       GANDALF_IP_HMAC_KEY: ${GANDALF_IP_HMAC_KEY:-dev-only-change-me}
       GANDALF_MODEL_DIR: /models
+      GANDALF_IP_DIR: /ip
       # allowlists: the engine fetches keys only from these, never from a request
       GANDALF_AGENT_DIRECTORIES: http://agent-operator:8090
       GANDALF_MANDATE_ISSUERS: http://shop:8080,http://shop-sim:8080
       OMP_NUM_THREADS: "1"   # one row per request: threads only add overhead
     volumes:
       - ./models:/models:ro
+      - ./data/ip:/ip:ro   # built by jobs/ip_reputation.py (sources not in git)
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

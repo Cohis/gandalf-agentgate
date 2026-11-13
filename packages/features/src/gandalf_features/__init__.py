@@ -33,10 +33,12 @@ from .scale import (
     text_of,
 )
 
-FEATURE_VERSION = "f3"  # f2 = f1 + toque, toque_area; f3 = f2 + escala_*, foco_teclado
+FEATURE_VERSION = "f4"  # f2 = f1 + toque; f3 = f2 + escala_*, foco_teclado
+# f4 = f3 with the same definitions, but the network features (rede_*, ip_em_lista,
+# ip_reputacao) now come from real IP tables (phase 6); before, they were always 0.
 # Feature sets that f3 only extends: every feature they define is computed exactly the
 # same way in f3, so a model trained on them can still be served.
-COMPATIBLE_VERSIONS = frozenset({"f2", "f3"})
+COMPATIBLE_VERSIONS = frozenset({"f2", "f3", "f4"})
 # "f3a": vectors logged by an early f3 engine, before foco_teclado and escala_mesmo_perfil_6h
 # existed. Kept apart (own training cohort); the two missing features read as absent.
 

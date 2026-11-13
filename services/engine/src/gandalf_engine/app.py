@@ -47,6 +47,14 @@ async def _keep_keys_fresh(gate: AgentGate) -> None:
             await asyncio.sleep(60 if not gate.directory.keys else gate.directory.refresh_s)
 
 
+async def _keep_ip_tables_fresh(enricher: Enricher) -> None:
+    """Pick up the tables the daily job rewrites, without a restart."""
+    while True:
+        await asyncio.sleep(600)
+        if await asyncio.to_thread(enricher.reload):
+            log.info("IP tables reloaded")
+
+
 def _fraud_scorer_or_none(settings: Settings) -> Scorer | None:
     try:
         return load_fraud_scorer(settings.model_dir)
@@ -81,6 +89,7 @@ def create_app(
             PostgresStorage(settings.database_url) if settings.database_url else NullStorage()
         )
         await st.start()
+        enricher = Enricher(settings.ip_dir)
         gate = AgentGate(
             OperatorDirectory(settings.agent_directories), issuer_urls=settings.mandate_issuers
         )
@@ -89,7 +98,7 @@ def create_app(
         app.state.engine = Engine(
             redis=r,
             storage=st,
-            enricher=Enricher(),
+            enricher=enricher,
             rules=load_rules(settings.rules_path),
             scorer=_scorer_or_baseline(settings),
             fraud_scorer=_fraud_scorer_or_none(settings),
@@ -98,10 +107,12 @@ def create_app(
             agents=gate,
         )
         refresher = asyncio.create_task(_keep_keys_fresh(gate), name="gandalf-agent-keys")
+        ip_reloader = asyncio.create_task(_keep_ip_tables_fresh(enricher), name="gandalf-ip")
         try:
             yield
         finally:
             refresher.cancel()
+            ip_reloader.cancel()
             await st.stop()
             await r.aclose()
 

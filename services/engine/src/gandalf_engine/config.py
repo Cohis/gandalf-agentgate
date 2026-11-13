@@ -23,6 +23,7 @@ class Settings:
     # Agent operators this shop trusts (their key directories) and the shops whose
     # mandates it accepts. Allowlists: the engine never fetches a URL from a request.
     agent_directories: tuple[str, ...] = ()
+    ip_dir: Path | None = None  # tables built by jobs/ip_reputation.py
     mandate_issuers: tuple[str, ...] = ()
 
     @classmethod
@@ -37,5 +38,6 @@ class Settings:
             policy_path=Path(os.environ.get("GANDALF_POLICY_PATH", d.policy_path)),
             model_dir=Path(m) if (m := os.environ.get("GANDALF_MODEL_DIR")) else None,
             agent_directories=_urls(os.environ.get("GANDALF_AGENT_DIRECTORIES", "")),
+            ip_dir=Path(i) if (i := os.environ.get("GANDALF_IP_DIR")) else None,
             mandate_issuers=_urls(os.environ.get("GANDALF_MANDATE_ISSUERS", "")),
         )

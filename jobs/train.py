@@ -88,7 +88,7 @@ def load() -> pl.DataFrame:
     with psycopg.connect(DSN) as conn:
         rows = conn.execute(
             sql.replace("f.features,", "f.features, f.versao_features,"),
-            ([FEATURE_VERSION, "f3a", "f2", "f1"],),
+            ([FEATURE_VERSION, "f3", "f3a", "f2", "f1"],),
         ).fetchall()
     # Older vectors are brought up to the current feature set (see gandalf_features.upgrade).
     versions = [r[5] for r in rows]

@@ -69,25 +69,93 @@ class Clock:
         return f"{self.offset_s:.0f}"
 
 
-# Fictional lab addresses. Until phase 6 the engine does not classify networks, so
-# these only drive the per-IP velocity windows.
+# Lab addresses. When the IP tables exist (jobs/ip_reputation.py), each generator
+# samples from real ranges of the right kind, so the engine's enrichment sees a
+# consistent network type: a person at home on a Brazilian ISP, a phone on a mobile
+# operator, a script on a cloud provider. The addresses are still never contacted.
+_POOLS: dict[str, list[tuple[int, int]]] | None = None
+
+
+def _pools() -> dict[str, list[tuple[int, int]]]:
+    global _POOLS
+    if _POOLS is None:
+        _POOLS = {}
+        try:
+            import numpy as np
+
+            with np.load("data/ip/rede.npz") as t:
+                tipos = [str(x) for x in t["tipos"]]
+                kind = np.asarray([tipos[i] for i in t["tipo"]])
+                big = (t["asn_end"].astype(np.int64) - t["asn_start"]) >= 255
+                for name, mask in {
+                    "br_residencial": (kind == "residencial") & (t["pais"] == "BR") & big,
+                    "br_movel": (kind == "movel") & big,
+                    "datacenter": (kind == "datacenter") & big,
+                    "exterior": (kind == "residencial")
+                    & (t["pais"] != "BR")
+                    & (t["pais"] != "")
+                    & big,
+                }.items():
+                    _POOLS[name] = list(
+                        zip(t["asn_start"][mask].tolist(), t["asn_end"][mask].tolist(), strict=True)
+                    )
+                _POOLS["_lista"] = list(
+                    zip(t["lista_start"].tolist(), t["lista_end"].tolist(), strict=True)
+                )
+        except (OSError, KeyError):
+            pass
+    return _POOLS
+
+
+def _listed(n: int) -> bool:
+    import bisect
+
+    lst = _pools().get("_lista", [])
+    i = bisect.bisect_right(lst, (n, 1 << 32)) - 1
+    return i >= 0 and lst[i][0] <= n <= lst[i][1]
+
+
+def _sample(rng: random.Random, pool: str, fallback: str) -> str:
+    """An address from a real range of the right kind, never from a public blocklist
+    (honest traffic and careful attackers do not come from hijacked netblocks)."""
+    ranges = _pools().get(pool)
+    if not ranges:
+        return fallback
+    for _ in range(20):
+        a, b = rng.choice(ranges)
+        n = rng.randint(a + 1, b - 1)
+        if not _listed(n):
+            break
+    return f"{n >> 24 & 255}.{n >> 16 & 255}.{n >> 8 & 255}.{n & 255}"
+
+
+def _rand(rng: random.Random, firsts: tuple[int, ...]) -> str:
+    return f"{rng.choice(firsts)}.{rng.randrange(256)}.{rng.randrange(256)}.{rng.randrange(1, 255)}"
+
+
 def ip_residential(rng: random.Random) -> str:
-    return f"{rng.choice((177, 187, 189, 191, 200))}.{rng.randrange(256)}.{rng.randrange(256)}.{rng.randrange(1, 255)}"  # noqa: E501
+    return _sample(rng, "br_residencial", _rand(rng, (177, 187, 189, 191, 200)))
 
 
-_CGNAT = [f"179.240.{a}.{b}" for a in range(3) for b in range(1, 11)]  # 30 shared exits
+_CGNAT: list[str] = []
 
 
 def ip_mobile_cgnat(rng: random.Random) -> str:
-    return rng.choice(_CGNAT)  # thousands of people behind a handful of addresses
+    """Thousands of people behind a handful of carrier-grade NAT exits."""
+    if not _CGNAT:
+        seed = random.Random(26615)
+        _CGNAT.extend(
+            _sample(seed, "br_movel", f"179.240.{i // 10}.{i % 10 + 1}") for i in range(30)
+        )
+    return rng.choice(_CGNAT)
 
 
 def ip_datacenter(rng: random.Random) -> str:
-    return f"{rng.choice((34, 35, 52, 54, 104))}.{rng.randrange(256)}.{rng.randrange(256)}.{rng.randrange(1, 255)}"  # noqa: E501
+    return _sample(rng, "datacenter", _rand(rng, (34, 35, 52, 54, 104)))
 
 
 def ip_abroad(rng: random.Random) -> str:
-    return f"{rng.choice((81, 85, 93, 151))}.{rng.randrange(256)}.{rng.randrange(256)}.{rng.randrange(1, 255)}"  # noqa: E501
+    return _sample(rng, "exterior", _rand(rng, (81, 85, 93, 151)))
 
 
 def test_card(rng: random.Random, *, valid: bool = True) -> str:

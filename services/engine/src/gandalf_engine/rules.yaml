@@ -14,8 +14,10 @@
   todas:
     - { feature: ev_disp_10m, op: ">=", valor: 120 }
 
+# A public blocklist is strong evidence, but not proof about this person (shared NAT,
+# a reassigned block). No single signal denies on its own: it challenges.
 - id: ip_em_lista_de_bloqueio
-  decisao: negar
+  decisao: desafiar
   motivo: "IP presente em lista pública de redes sequestradas ou botnets"
   todas:
     - { feature: ip_em_lista, op: "==", valor: 1 }
