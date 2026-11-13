@@ -47,7 +47,6 @@ OUTSIDE_PT = {
 }
 
 
-
 def outside_pt(outside: str) -> str:
     """Why an action falls outside the mandate, in the visitor-facing language."""
     if m := re.match(r"'(\w+)' not in the mandate", outside):

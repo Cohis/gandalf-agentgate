@@ -154,6 +154,7 @@ def test_expired_signature_is_rejected(harness: Harness, keys) -> None:
 def test_outside_mandate_reasons_are_in_portuguese() -> None:
     from gandalf_engine.pipeline import outside_pt
 
-    assert outside_pt("'checkout' not in the mandate") == "ação 'checkout' não autorizada no mandato"
+    expected = "ação 'checkout' não autorizada no mandato"
+    assert outside_pt("'checkout' not in the mandate") == expected
     assert outside_pt("mandate rejected: mandate expired") == "mandato inválido"
     assert outside_pt("value above the per-purchase limit") == "valor acima do limite por compra"
