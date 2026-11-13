@@ -310,9 +310,11 @@ class AgentGate:
     directory: OperatorDirectory
     issuer_urls: tuple[str, ...] = ()
     issuers: dict[str, Ed25519PublicKey] = field(default_factory=dict)  # kid -> key
+    complete: bool = False  # every directory and issuer answered on the last refresh
 
     async def refresh(self, client: Any) -> None:
         await self.directory.refresh(client)
+        complete = bool(self.directory.keys) or not self.directory.urls
         for url in self.issuer_urls:
             try:
                 r = await client.get(
@@ -322,7 +324,9 @@ class AgentGate:
                 body = r.json()
                 self.issuers[str(body["kid"])] = key_from_jwk(body["jwk"])
             except Exception as exc:
+                complete = False
                 log.warning("mandate issuer %s unavailable: %s", url, exc)
+        self.complete = complete
 
     async def check(self, req: Any, redis: Any, now: float | None = None) -> Declaration:
         """``req``: the AssessRequest. Signature freshness uses the wall clock (the

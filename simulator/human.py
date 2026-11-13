@@ -85,12 +85,26 @@ class Human:
     def __init__(self, page: Any, rng: random.Random, persona: Persona, strokes: list[Stroke]):
         self.page, self.rng, self.p, self.strokes = page, rng, persona, strokes
         self.pos = (rng.uniform(200, 900), rng.uniform(150, 500))
+        # Calibrated on the 11 recorded volunteers (phase 4). A single lognormal pause
+        # before every action made simulated people far too steady (ritmo_cv median 0.47
+        # vs 0.73 real) and never quick (shortest gap ~1.9 s vs ~1.1 s real). People
+        # differ in how steady they are, sometimes act in quick succession (they already
+        # know where the next button is), and now and then stop for a while.
+        self.sigma = rng.uniform(0.6, 1.1)
+        self.hurry = rng.uniform(0.1, 0.35)
+        self.distraction = rng.uniform(0.04, 0.15)
 
     def _lognormal(self, median: float, sigma: float, cap: float) -> float:
         return min(self.rng.lognormvariate(math.log(median), sigma), cap)
 
     async def think(self, scale: float = 1.0) -> None:
-        await asyncio.sleep(self._lognormal(self.p.think_s * scale, 0.6, 12.0))
+        if self.rng.random() < self.hurry:
+            pause = self._lognormal(0.45, 0.5, 1.5)
+        else:
+            pause = self._lognormal(self.p.think_s * scale, self.sigma, 30.0)
+        if self.rng.random() < self.distraction:
+            pause += self._lognormal(6.0, 0.8, 60.0)
+        await asyncio.sleep(pause)
 
     async def _target(self, loc: Any) -> tuple[float, float]:
         await loc.scroll_into_view_if_needed()

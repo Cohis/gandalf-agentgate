@@ -44,7 +44,8 @@ async def _keep_keys_fresh(gate: AgentGate) -> None:
     async with httpx.AsyncClient(timeout=3) as client:
         while True:
             await gate.refresh(client)
-            await asyncio.sleep(60 if not gate.directory.keys else gate.directory.refresh_s)
+            # The shop may start after the engine: retry soon until every source answered.
+            await asyncio.sleep(gate.directory.refresh_s if gate.complete else 60)
 
 
 async def _keep_ip_tables_fresh(enricher: Enricher) -> None:

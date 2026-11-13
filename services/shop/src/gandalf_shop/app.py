@@ -381,7 +381,8 @@ def create_app(
     async def cookies(request: Request, call_next: Any) -> Response:
         """Every response carries the session and device cookies, redirects included."""
         path = request.url.path
-        open_path = path.startswith(("/gravar", "/static")) or path == "/saude"
+        # The mandate key is public and is what the engine fetches: never behind the invite.
+        open_path = path.startswith(("/gravar", "/static", "/.well-known/")) or path == "/saude"
         if s.invite_code and not open_path:
             # Invitation only: without a recorded session there is nothing to see.
             sess = sessions.get(request.cookies.get("sid", ""))
@@ -532,7 +533,10 @@ def create_app(
     ) -> Response | None:
         """None means 'go ahead'. Reasons are never shown to the visitor: they would
         teach an attacker what to change."""
-        if s.shadow or verdict is None or verdict.decisao is Decisao.aprovar:
+        # Lab only: a single request may ask to be enforced even in shadow mode, so the
+        # tests and the legitimate agent can meet the real challenges.
+        enforce = s.lab_mode and request.headers.get("x-lab-enforce") == "1"
+        if (s.shadow and not enforce) or verdict is None or verdict.decisao is Decisao.aprovar:
             return None
         sid, sess = session_of(request)
         if sess.rec:
