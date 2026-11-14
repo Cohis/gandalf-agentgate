@@ -9,6 +9,7 @@ owner confirms with the authenticator and the retried action goes through.
 
 from __future__ import annotations
 
+import random
 import uuid
 
 import pytest
@@ -16,13 +17,47 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 SHOP = "https://localhost:8444"  # the simulator's shop: lab mode, same code
+# The owner's own browser, not a headless bot: an ordinary desktop user-agent.
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+class Person:
+    """Drives the page roughly like a person: the pointer travels to a point near (not
+    at) the middle of the target, and text is typed key by key. The engine denies a
+    session that clicks like a script outright (score above 0.99), and this test is
+    about what happens AFTER the owner declares automation, not about that."""
+
+    def __init__(self, page) -> None:  # type: ignore[no-untyped-def]
+        self.page, self.rng, self.pos = page, random.Random(7), (300.0, 200.0)
+
+    def click(self, selector: str) -> None:
+        loc = self.page.locator(selector).first
+        loc.scroll_into_view_if_needed()
+        box = loc.bounding_box()
+        x = box["x"] + box["width"] * self.rng.uniform(0.3, 0.7)
+        y = box["y"] + box["height"] * self.rng.uniform(0.3, 0.7)
+        self.page.mouse.move(*self.pos)
+        self.page.mouse.move(x, y, steps=self.rng.randint(12, 25))
+        self.page.wait_for_timeout(self.rng.randint(150, 400))
+        self.page.mouse.click(x, y)
+        self.pos = (x, y)
+
+    def type(self, selector: str, text: str) -> None:
+        self.click(selector)
+        self.page.keyboard.type(text, delay=self.rng.randint(90, 160))
+        self.page.wait_for_timeout(self.rng.randint(300, 900))
 
 
 def test_passkey_registers_and_answers_a_challenge() -> None:
     sync_api = pytest.importorskip("patchright.sync_api")
     with sync_api.sync_playwright() as p:
         browser = p.chromium.launch(channel="chromium", headless=True)
-        ctx = browser.new_context(base_url=SHOP, ignore_https_errors=True, locale="pt-BR")
+        ctx = browser.new_context(
+            base_url=SHOP, ignore_https_errors=True, locale="pt-BR", user_agent=UA
+        )
         page = ctx.new_page()
         cdp = ctx.new_cdp_session(page)
         cdp.send("WebAuthn.enable")
@@ -39,15 +74,15 @@ def test_passkey_registers_and_answers_a_challenge() -> None:
             },
         )
 
+        person = Person(page)
         page.goto("/cadastro")
+        page.wait_for_timeout(1200)
         f = 'form[action="/cadastro"]'
-        page.fill(f"{f} [name=nome]", "Teste Passkey")
-        page.fill(f"{f} [name=email]", f"passkey-{uuid.uuid4().hex[:8]}@exemplo.test")
-        page.fill(f"{f} [name=senha]", "senha-de-teste-123")
-        page.click(f"{f} button[type=submit]")
-        page.wait_for_load_state()
-        # The test clicks like a script, so the engine rightly flags the signup; the
-        # shadow shop lets it through, which is what this test needs.
+        person.type(f"{f} [name=nome]", "Teste Passkey")
+        person.type(f"{f} [name=email]", f"passkey-{uuid.uuid4().hex[:8]}@exemplo.test")
+        person.type(f"{f} [name=senha]", "senha-de-teste-123")
+        with page.expect_navigation():
+            person.click(f"{f} button[type=submit]")
 
         page.goto("/conta/passkey")
         page.click("[data-passkey=registrar]")
@@ -61,16 +96,17 @@ def test_passkey_registers_and_answers_a_challenge() -> None:
         ctx.set_extra_http_headers({"X-Lab-Enforce": "1"})
         ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => true})")
         page.goto("/")
-        add = page.locator('form[action="/carrinho/adicionar"] button').first
-        add.click()
-        page.wait_for_load_state()
+        page.wait_for_timeout(1500)
+        with page.expect_navigation():
+            person.click('form[action="/carrinho/adicionar"] button')
         assert "Confirme que é você" in page.content(), "webdriver session was not challenged"
         page.click("[data-passkey=confirmar]")
         status.filter(has_text="Confirmado").wait_for(timeout=10_000)
 
         # The verified session passes on the retry.
         page.goto("/")
-        page.locator('form[action="/carrinho/adicionar"] button').first.click()
-        page.wait_for_load_state()
+        page.wait_for_timeout(1500)
+        with page.expect_navigation():
+            person.click('form[action="/carrinho/adicionar"] button')
         assert "Confirme que é você" not in page.content()
         browser.close()

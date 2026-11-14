@@ -29,10 +29,10 @@ O que isso **não** resolve: os humanos simulados e os atacantes saíram da mesm
 ## Limitações conhecidas dos sinais
 
 - **Inconsistências de fingerprint.** O Chromium em modo headless renderiza WebGL por software, o que conta como uma inconsistência em toda sessão de navegador do laboratório, humana ou não. O sinal fica sem valor aqui; num navegador de verdade ele varia.
-- **Tipo de rede.** Enquanto a fase 6 não chega, o motor classifica todo IP como "desconhecido". Quando chegar, o tipo de rede de cada sessão simulada terá sido escolhido pelo gerador, e portanto estará correlacionado com o rótulo por construção. Esse número precisará ser lido com esse cuidado.
+- **Tipo de rede.** Desde a fase 6 o motor classifica o IP com tabelas locais (ASN, listas públicas, reputação própria). No laboratório, porém, o IP de cada sessão simulada foi escolhido pelo gerador, então o tipo de rede está correlacionado com o rótulo por construção. A ablação da fase 7 mostra o tamanho disso: sem a camada de rede, a detecção média cai de 91 % para 85 %.
 - **Telemetria forjável.** Quem lê o script da página pode fabricar o que ele envia. O atacante de nível 4 fará exatamente isso.
 - **JA4.** Se o proxy falhar ao calcular a impressão, um cabeçalho forjado pelo cliente pode passar adiante. É um sinal, nunca uma prova.
-- **Ritmo de agentes.** As estatísticas de ritmo não dependem da escala, mas a hipótese de que um agente de IA tem intervalos regulares ainda não foi testada contra um agente real (fase 3).
+- **Ritmo.** O ritmo absoluto (velocidade) nunca entrou no modelo. O relativo (regularidade) saiu na fase 7: as pessoas simuladas são mais regulares que as reais, mesmo depois de calibradas, e o modelo aprendia o simulador. As features continuam registradas.
 
 ## Tamanho da amostra
 
@@ -73,5 +73,17 @@ As medições com o modelo no caminho foram feitas com o notebook em perfil de e
 - **Os limiares dependem de uma suposição**: que 2% do tráfego real seja fraude (`prevalencia_fraude` no `policy.yaml`). Com outra taxa, os limiares mudam. Os custos também são escolhas de política, não medidas.
 - **`valor` é o sinal mais usado (39% do ganho).** Testadores de cartão compram o item de R$ 4,90 e abusadores de cupom compram o que o cupom cobre. Um fraudador que compre itens de valor comum perde esse sinal.
 - **Conta roubada é o cenário mais difícil (62% sinalizado)**: o login de um cliente que trocou de aparelho ou viajou se parece com o de quem roubou a senha. É exatamente o caso em que o desafio é a confirmação fora da sessão, e não a negação.
-- **Fricção para pessoas honestas.** Com esses custos, cerca de 7% dos eventos de pessoas honestas simuladas recebem um pedido de confirmação (nenhum é negado), a maioria em logins. É o preço que a política aceita para pegar a fraude humana.
-- **Pessoas reais no modelo de fraude**: 3,5% de 200 eventos seriam desafiados, mas três quartos dessas pessoas estavam no treino, então o número é otimista.
+- **Fricção para pessoas honestas.** Com esses custos, cerca de 7% dos eventos de pessoas honestas simuladas recebiam um pedido de confirmação (nenhum era negado), a maioria em logins. Na fase 7 o número subiu para 14 %, e a política ganhou um teto (`atrito_maximo: 0.05`).
+- **Pessoas reais no modelo de fraude**: 3,5% de 200 eventos seriam desafiados, mas três quartos dessas pessoas estavam no treino, então o número era otimista. Na fase 7, um modelo de fraude sem nenhuma gravação no treino barrava 36 %. Desde então as gravações não entram nesse modelo (veja abaixo).
+
+## Avaliação final, fase 7 (13/nov/2026)
+
+Números em [docs/results/fase7-final.md](results/fase7-final.md).
+
+- **Grupos de ataque pequenos no teste.** De 6 a 28 sessões por nível, com intervalos largos. O nível 2, por exemplo, tem 85 % com intervalo de 50 a 100 %.
+- **As gravações validam só o modelo de automação.** Todos os voluntários vieram pelo túnel (rede desconhecida, sem ASN) e cumpriram uma lista de tarefas em poucos minutos. Para o modelo de fraude, que lê rede, velocidade e valor, isso é o arranjo da gravação e não o comportamento de um cliente. Por isso as gravações não entram no treino dele, e o atrito real do modelo de fraude não foi medido em ninguém de verdade.
+- **Fazenda de um tipo nunca visto.** O sistema pega 79 a 90 % das contas de uma fazenda que não viu, mas só porque viu outra. Sem nenhuma fazenda no treino, pega 10 a 16 %.
+- **Agente verificado e fraude.** Um agente com assinatura válida e mandato não passa pelos modelos: o limite é o mandato (valor por compra, total, ações). Um titular que assine um mandato largo demais assume esse risco. Um mandato roubado exigiria a chave de assinatura da loja.
+- **Capacidade.** Com um processo, o motor atende cerca de 210 req/s no notebook do laboratório; acima disso a fila cresce. Mais processos ou máquinas resolvem, mas isso não foi medido.
+- **As 7 contas da fazenda B que falharam** não chegaram a se cadastrar (o formulário não apareceu em 30 s) e não estão nos dados.
+

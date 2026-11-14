@@ -6,8 +6,9 @@ help:            ## list targets
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/'
 
 up: chaves       ## build and start the whole lab
-	docker compose up -d --build --wait
+	docker compose --profile sim up -d --build --wait
 	@echo "loja:   https://localhost:8443  (certificado autoassinado)"
+	@echo "loja do simulador: https://localhost:8444  (tráfego rotulado, modo sombra)"
 	@echo "painel: http://localhost:8501"
 
 down:            ## stop the lab (keeps data)
@@ -86,6 +87,9 @@ dev: telemetry   ## engine + shop in one process, no Docker (in-memory state)
 
 psql:            ## open a SQL shell on the lab database
 	docker compose exec postgres psql -U gandalf gandalf
+
+retencao:        ## LGPD: delete unlabelled events past 30 days (run daily); PARTICIPANTE=<code> erases a volunteer
+	uv run python -m jobs.retention $(if $(PARTICIPANTE),--participante $(PARTICIPANTE),)
 
 chaves:          ## the shops' mandate signing keys (lab: readable by the container user)
 	@mkdir -p data/loja

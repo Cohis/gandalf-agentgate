@@ -19,12 +19,20 @@ Prevenção a fraude e segurança (LGPD, art. 7º, IX, legítimo interesse, e ar
 
 ## Direitos dos titulares
 
-- Um voluntário pode pedir a exclusão informando o seu código de participante: os eventos com aquele rótulo são apagados do banco.
+- Um voluntário pode pedir a exclusão informando o seu código de participante: `make retencao PARTICIPANTE=<código>` apaga do banco os eventos com aquele rótulo.
 - Os rótulos de pessoas reais ficam separados (`fonte = gravacao:humano_real`).
 
 ## Retenção
 
-O plano prevê partições diárias com descarte após 30 dias. **No estado atual do laboratório essa retenção não está implementada**: os dados ficam até serem apagados manualmente. Está registrado como pendência.
+`make retencao` (`jobs/retention.py`), para rodar uma vez por dia:
+
+- **Tráfego real, não rotulado**: eventos com mais de 30 dias são apagados, junto com a decisão, o vetor de features e o vetor do cadastro (`ON DELETE CASCADE`). Desafios com mais de 30 dias também.
+- **Tráfego do simulador, rotulado**: fica. Não é dado pessoal (o laboratório o gerou, os IPs são fictícios) e é o conjunto de treino.
+- **Gravações de voluntários**: ficam até o fim do projeto, como diz a página de consentimento.
+
+A exclusão a pedido é `make retencao PARTICIPANTE=<código>`: apaga todos os eventos gravados com aquele código e os rótulos. Os dois caminhos têm teste ponta a ponta (`tests/e2e/test_retention.py`), que roda numa transação desfeita.
+
+Num ambiente de produção, as partições diárias do plano tornariam o descarte um `DROP` de partição em vez de um `DELETE`. No volume do laboratório, o `DELETE` basta.
 
 ## Decisões automatizadas (art. 20)
 
