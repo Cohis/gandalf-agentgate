@@ -1,4 +1,4 @@
-# Fase 7: coleta e avaliação final (modelos ativos desde 14/nov/2026)
+# Fase 7: coleta e avaliação final (modelos ativos desde 13/nov/2026)
 
 Coleta de 13/nov, feature set `f4`, com todas as camadas no ar: motor, loja-sombra, identidade de agente (Web Bot Auth + mandato) e passkey. Os atores rodaram em cinco lotes, um depois do outro (`scripts/final_campaign.sh`, 2 h 33 min):
 
@@ -84,7 +84,7 @@ Nenhuma camada sozinha decide. As que mais pesam são velocidade e escala (fazen
 
 ## Modelos no ar
 
-Treinados com todas as campanhas (`make eval`, de f1 a f4, 7.951 eventos), com o mesmo split por lote e tipo de ator. **Ativados em 14/nov/2026**, com o motor reconstruído com a política nova; os testes ponta a ponta (pilha, passkey, retenção) e o agente legítimo passaram depois da troca.
+Treinados com todas as campanhas (`make eval`, de f1 a f4, 7.951 eventos), com o mesmo split por lote e tipo de ator. **Ativados em 13/nov/2026**, com o motor reconstruído com a política nova; os testes ponta a ponta (pilha, passkey, retenção) e o agente legítimo passaram depois da troca.
 
 - Automação `20261113-2328-0444b2`: no teste, níveis 1, 2 e 3 a 100 % e fazenda a 84,5 %, barrando 1,1 % das pessoas simuladas. Pessoas reais, uma de fora por vez: 0 de 200. Principais features: `cliques_centro`, `valor`, `cursor_linear`, `ev_disp_24h`.
 - Fraude `fr-20261113-2328-3b507d`: desafia a partir de 0,7251 e nega a partir de 0,9786. Desafia 3,6 % das pessoas honestas simuladas e pega 100 % do cupom multicontas, 99 % do teste de cartão manual e 36 % da conta roubada. Principais features: `valor`, `ev_disp_24h`, `cadastros_ip_1h`.
