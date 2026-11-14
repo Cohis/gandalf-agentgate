@@ -38,13 +38,17 @@ class Policy:
         return Ator(tipo=TipoAtor.humano, confianca=1.0 - score_automacao)
 
     @staticmethod
-    def declared(within: bool, fired: list[Rule], fraud: Decisao) -> tuple[Decisao, Acao]:
+    def declared(within: bool, fired: list[Rule]) -> tuple[Decisao, Acao]:
         """A verified agent is automation by definition, so the automation model has
-        nothing to say about it. What matters is whether the owner authorised this:
-        inside the mandate it goes through; outside, the owner is asked."""
-        if any(r.decisao is Decisao.negar for r in fired) or fraud is Decisao.negar:
+        nothing to say about it. Neither has the fraud model: the owner's agent logging
+        in from its operator's datacenter is, feature for feature, a credential-stuffing
+        bot (phase 7 measured it: every in-mandate login was challenged). What tells
+        them apart is the verified signature, and what bounds the risk is the mandate
+        the owner signed: per-purchase and total limits, allowed actions. Inside it the
+        agent goes through; outside, the owner is asked. Hard deny rules still apply."""
+        if any(r.decisao is Decisao.negar for r in fired):
             return Decisao.negar, Acao.nenhuma
-        if within and fraud is Decisao.aprovar:
+        if within:
             return Decisao.aprovar, Acao.nenhuma
         return Decisao.desafiar, Acao.confirmar_fora_da_sessao
 

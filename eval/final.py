@@ -36,10 +36,10 @@ from jobs.train import (
     fit,
     load,
     people,
-    split_in_time,
+    stratified_split,
     threshold_at_fpr,
 )
-from jobs.train_fraud import FRAUD_FEATURES, as_fraud, cost_thresholds, costs
+from jobs.train_fraud import FRAUD_FEATURES, as_fraud, cost_thresholds, costs, farm_curve
 
 OUT = Path("eval/out")
 
@@ -82,6 +82,14 @@ def system(train: pl.DataFrame, valid: pl.DataFrame, drop: tuple[str, ...] = ())
     return auto, auto_feats, t_auto, fraud, fraud_feats, t1, t2
 
 
+def decide_auto(sys: tuple, part: pl.DataFrame) -> np.ndarray:
+    """The automation model alone: the only one the recordings can test (see as_fraud)."""
+    auto, af, ta, *_ = sys
+    if not part.height:
+        return np.zeros(0, dtype=bool)
+    return auto.predict(part.select(af).to_numpy()) >= ta
+
+
 def decide(sys: tuple, part: pl.DataFrame) -> np.ndarray:
     """True where the engine would challenge or deny."""
     auto, af, ta, fraud, ff, t1, _ = sys
@@ -114,6 +122,10 @@ def groups(test: pl.DataFrame) -> list[tuple[str, np.ndarray, str]]:
     out.append(("Fraude humana (passos fraudulentos)", fraudster & (yf == 1), "detectado"))
     honest = (y == 0) & (yf == 0) & ~fraudster & (nivel == 0)
     out.append(("Pessoas simuladas, todas", honest, "barrado"))
+    if "onda" in test.columns:
+        wave = test["onda"].to_numpy().astype(bool)
+        out.append(("Pessoas simuladas, dia comum", honest & ~wave, "barrado"))
+        out.append(("Pessoas simuladas, durante uma fazenda", honest & wave, "barrado"))
     out.append(
         (
             "Pessoas simuladas com deficiência",
@@ -131,38 +143,41 @@ def groups(test: pl.DataFrame) -> list[tuple[str, np.ndarray, str]]:
     return out
 
 
-def stratified_split(df: pl.DataFrame) -> pl.DataFrame:
-    """60/20/20 in time WITHIN each kind of actor (scenario and level). The final
-    campaign runs each kind as its own batch, one after the other; a single split in
-    time would leave only the last batch in the test period."""
-    return pl.concat(
-        [split_in_time(part) for _, part in df.group_by("fonte", "nivel", maintain_order=True)],
-        how="diagonal",
-    )
+def deny_rule_ids() -> list[str]:
+    import gandalf_engine
+    from gandalf_contracts import Decisao
+    from gandalf_engine.rules import load_rules
+
+    path = Path(gandalf_engine.__file__).with_name("rules.yaml")
+    return [r.id for r in load_rules(path) if r.decisao is Decisao.negar]
 
 
 def level5(cohort: str) -> list[str]:
+    """Replays the declared-agent policy on what the engine logged: the identity layer's
+    verdict (inside or outside the mandate) and any hard deny rule. The models are not
+    consulted for a verified agent, so the candidates do not change these rows."""
     sql = """
-        SELECT l.perfil, e.sessao_id, d.decisao
+        SELECT CASE WHEN d.motivos::text LIKE '%%dentro do mandato%%' THEN 'dentro'
+                    ELSE 'fora' END,
+               e.sessao_id,
+               CASE WHEN d.regras_acionadas ?| %s THEN 'negar'
+                    WHEN d.motivos::text LIKE '%%dentro do mandato%%' THEN 'aprovar'
+                    ELSE 'desafiar' END
         FROM labels l JOIN events e USING (avaliacao_id) JOIN decisions d USING (avaliacao_id)
         JOIN feature_snapshots f USING (avaliacao_id)
         WHERE l.nivel_atacante = 5 AND f.versao_features = %s
     """
     with psycopg.connect(DSN) as conn:
-        rows = conn.execute(sql, (cohort,)).fetchall()
+        rows = conn.execute(sql, (deny_rule_ids(), cohort)).fetchall()
     if not rows:
         return ["| Agente legítimo (nível 5) | — | — | sem dados | |"]
     rng = np.random.default_rng(5)
     out = []
-    for perfil, label, kind in (
-        ("agente_legitimo", "Agente legítimo dentro do mandato (aprovado)", "aprovado"),
-        (
-            "agente_fora_do_mandato",
-            "Agente legítimo fora do mandato (titular consultado)",
-            "detectado",
-        ),
+    for step, label, kind in (
+        ("dentro", "Agente legítimo, passos dentro do mandato (aprovado)", "aprovado"),
+        ("fora", "Agente legítimo, passos fora do mandato (titular consultado)", "detectado"),
     ):
-        r = [x for x in rows if x[0] == perfil]
+        r = [x for x in rows if x[0] == step]
         flags = np.array([x[2] != "aprovar" for x in r], dtype=bool)
         out.append(row(label, flags, np.array([x[1] for x in r]), rng, kind))
     return out
@@ -228,7 +243,7 @@ def main() -> None:
             ),
         )
         part = real.filter(pl.col("perfil") == held)
-        rf.append(decide(s_, part))
+        rf.append(decide_auto(s_, part))
         rs.append(part["sessao_id"].to_numpy())
         rp.append(part["toque"].fill_null(0).to_numpy() >= 0.5)
     if names:
@@ -243,6 +258,29 @@ def main() -> None:
             )
         )
         lines.append(row("Pessoas reais no celular (barrado)", f_[p_], s_[p_], rng, "barrado"))
+        never = decide_auto(
+            system(
+                sim.filter(pl.col("conjunto") == "treino"),
+                sim.filter(pl.col("conjunto") == "validacao"),
+            ),
+            real,
+        )
+        lines.append(
+            row(
+                "Pessoas reais, sem nenhuma pessoa real no treino (barrado)",
+                never,
+                real["sessao_id"].to_numpy(),
+                rng,
+                "barrado",
+            )
+        )
+        lines += [
+            "",
+            "As linhas de pessoas reais medem só o modelo de automação. O de fraude lê rede, "
+            "velocidade e valor, e nas gravações isso é o arranjo da gravação (todos pelo "
+            "túnel, rede desconhecida, uma lista de tarefas em poucos minutos), não o "
+            "comportamento de um cliente; por isso as gravações não entram no treino dele.",
+        ]
 
     # baseline: IP only
     honest_v = ~pl.col("y").cast(pl.Boolean) & ~pl.col("yf").cast(pl.Boolean)
@@ -267,6 +305,30 @@ def main() -> None:
             r_full = flags[mask].mean()
             lines.append(
                 f"| {label} ({kind}) | {len(np.unique(sess[mask]))} | {int(mask.sum())} | {r_ip:.1%} | {r_full:.1%} |"
+            )
+
+    # a farm the system has never seen
+    farms = sorted(sim.filter(pl.col("nivel") == 4)["perfil"].unique().to_list())
+    if len(farms) > 1:
+        lines += [
+            "",
+            "## Fazenda nunca vista",
+            "",
+            "O sistema inteiro (os dois modelos, os dois limiares) refeito sem nenhuma conta de "
+            "uma fazenda e aplicado a todas as contas dela, na ordem em que foram criadas. "
+            "Uma conta conta como pega se qualquer passo dela foi desafiado ou negado.",
+            "",
+            "| Fazenda nunca vista | Contas | Pegas | Das 20 primeiras | Primeira pega |",
+            "|---|---|---|---|---|",
+        ]
+        for fz in farms:
+            keep = pl.col("perfil") != fz
+            blind = system(train.filter(keep), valid.filter(keep))
+            part = sim.filter(pl.col("perfil") == fz)
+            cv = farm_curve(part, decide(blind, part))
+            lines.append(
+                f"| {fz.removeprefix('fazenda_llm_')} | {cv['contas']} | {cv['pegas']:.0%} | "
+                f"{cv['primeiras']:.0%} | {cv['primeira_pega'] or '—'} |"
             )
 
     # ablation

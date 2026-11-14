@@ -15,3 +15,7 @@ custos:                   # used by the offline threshold search
   prevalencia_fraude: 0.02 # share of real traffic that is fraud. The lab has far more
                           # attacks than customers; costs are reweighted to this rate,
                           # otherwise challenging everyone looks cheap. An assumption.
+  atrito_maximo: 0.05     # a ceiling, not a cost: at most this share of honest events
+                          # (validation) may be challenged by the fraud model. By cost
+                          # alone the search challenged 14 % of simulated people in phase 7
+                          # (21 % of those with a disability) for 11 points of human fraud.

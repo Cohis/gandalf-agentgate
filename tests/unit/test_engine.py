@@ -132,3 +132,16 @@ def test_health_and_metrics(harness: Harness) -> None:
     assert harness.client.get("/saude").json()["ok"] is True
     m = harness.client.get("/metricas", headers={"X-Gandalf-Key": KEY}).text
     assert 'gandalf_decisions_total{decisao="aprovar"} 1' in m
+
+
+def test_verified_agent_is_judged_by_its_mandate_not_by_the_fraud_model() -> None:
+    from gandalf_contracts import Acao, Decisao
+    from gandalf_engine.policy import Policy
+    from gandalf_engine.rules import Rule
+
+    deny = Rule("x", Decisao.negar, "regra dura", ())
+    nudge = Rule("y", Decisao.desafiar, "sinal de automação", ())
+    assert Policy.declared(True, []) == (Decisao.aprovar, Acao.nenhuma)
+    assert Policy.declared(True, [nudge]) == (Decisao.aprovar, Acao.nenhuma)  # it is automation
+    assert Policy.declared(False, []) == (Decisao.desafiar, Acao.confirmar_fora_da_sessao)
+    assert Policy.declared(True, [deny]) == (Decisao.negar, Acao.nenhuma)

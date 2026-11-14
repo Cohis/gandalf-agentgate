@@ -176,9 +176,7 @@ class Engine:
 
         motivos = [r.motivo for r in fired]
         if decl.agent is not None:
-            decisao, acao = self._policy.declared(
-                decl.outside is None, fired, self._policy.fraud_flag(score_fraude, t_fraude)
-            )
+            decisao, acao = self._policy.declared(decl.outside is None, fired)
             ator = Ator(tipo=TipoAtor.agente_declarado, confianca=1.0)
             if decl.outside is None:
                 motivos.append("agente declarado e verificado, agindo dentro do mandato do titular")

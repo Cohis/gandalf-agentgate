@@ -89,6 +89,10 @@ def cost_thresholds(
     s: np.ndarray, y: np.ndarray, c: dict[str, float]
 ) -> tuple[float, float, float]:
     grid = np.unique(np.concatenate([[0.0, 1.0 + 1e-9], np.quantile(s, np.linspace(0, 1, 201))]))
+    if c.get("atrito_maximo") and (y == 0).any():
+        # Friction ceiling: never challenge more honest events than the policy allows.
+        floor = threshold_at_fpr(s[y == 0], c["atrito_maximo"])
+        grid = np.unique(np.concatenate([[floor], grid[grid >= floor]]))
     best = (float("inf"), 1.0, 1.0)
     for i, t1 in enumerate(grid):
         for t2 in grid[i:]:
@@ -120,8 +124,14 @@ def farm_curve(part: pl.DataFrame, flags: np.ndarray, first: int = 20) -> dict[s
 
 
 def as_fraud(df: pl.DataFrame) -> pl.DataFrame:
-    """The shared helpers read the label from column ``y``."""
-    return df.with_columns(pl.col("yf").alias("y"))
+    """The shared helpers read the label from column ``y``.
+
+    Recorded people are left out. Their behaviour is real, but what this model reads
+    (network, velocity, value) is the recording setup: every volunteer came through the
+    tunnel (unknown network, no ASN) and did a scripted list of tasks in a few minutes
+    (~13 events per device in 10 min). As honest rows they taught the model that this is
+    what a good customer looks like, which is also what a bot looks like."""
+    return df.filter(~pl.col("real")).with_columns(pl.col("yf").alias("y"))
 
 
 def main() -> None:

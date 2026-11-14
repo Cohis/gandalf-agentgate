@@ -65,7 +65,14 @@ ABSOLUTE_PACE = frozenset(
 )
 # The contact size of a tap is logged, but every simulated tap (person or script) has
 # the emulator's fixed size, so the model could only learn the emulator from it.
-NOT_YET_TRUSTED = frozenset({"toque_area"})
+#
+# The same goes for how steady a person's rhythm is (phases 4 and 7). My simulated
+# people are steadier than the 11 recorded volunteers even after calibration (ritmo_cv
+# median 0.55 vs 0.73) and the farm is less steady than both (1.01), so the model reads
+# "irregular = farm". Without these features the unseen farm is still caught (90 / 80 %
+# of accounts), simulated people stop being flagged (5.7 % -> 0 %) and so do real people
+# the model never saw (3.5 % -> 0 %). Back in once there are enough real sessions.
+NOT_YET_TRUSTED = frozenset({"toque_area", "ritmo_cv", "ritmo_p90_p50", "ritmo_n"})
 ALL_FEATURES = [n for n in FEATURE_NAMES if n not in NOT_YET_TRUSTED]
 MODEL_FEATURES = [n for n in ALL_FEATURES if n not in ABSOLUTE_PACE]
 # A recorded person counts for more than a simulated one: there are few of them and
@@ -77,12 +84,16 @@ def load() -> pl.DataFrame:
     sql = """
         SELECT e.avaliacao_id, e.sessao_id, e.momento, e.evento, f.features,
                l.eh_automacao, l.nivel_atacante, l.perfil, l.fonte,
-               d.score_automacao AS score_online, d.versao_modelo, l.eh_fraude
+               d.score_automacao AS score_online, d.versao_modelo, l.eh_fraude, l.chegou_em
         FROM feature_snapshots f
         JOIN labels l USING (avaliacao_id)
         JOIN events e USING (avaliacao_id)
         JOIN decisions d USING (avaliacao_id)
         WHERE f.versao_features = ANY(%s)
+          -- Verified agents never reach the models: their mandate decides (policy.py).
+          -- As fraud negatives they would teach "a datacenter login is fine", which is
+          -- what a credential-stuffing bot does.
+          AND l.nivel_atacante IS DISTINCT FROM 5
         ORDER BY e.momento
     """
     with psycopg.connect(DSN) as conn:
@@ -96,7 +107,7 @@ def load() -> pl.DataFrame:
     if not rows:
         raise SystemExit("no labelled data: run simulator.run, then simulator.labels")
     cols = ("avaliacao_id sessao_id momento evento features y nivel perfil fonte "
-            "score_online versao_online yf").split()  # fmt: skip
+            "score_online versao_online yf rotulado_em").split()  # fmt: skip
     df = pl.DataFrame([dict(zip(cols, r, strict=True)) for r in rows], infer_schema_length=None)
     feats = pl.DataFrame(
         [{n: r[4].get(n) for n in FEATURE_NAMES} for r in rows],
@@ -128,13 +139,41 @@ def assign_people(real: pl.DataFrame, names: list[str]) -> pl.DataFrame:
 def temporal_split(df: pl.DataFrame) -> pl.DataFrame:
     """60 % / 20 % / 20 % in time, done separately for each feature set (each data
     collection campaign): otherwise a newly added feature would exist only in the
-    test period and the model could never learn it."""
+    test period and the model could never learn it. Within a campaign, separately for
+    each batch and kind of actor (see stratified_split)."""
     if "vf" in df.columns and df["vf"].n_unique() > 1:
         return pl.concat(
-            [split_in_time(part) for _, part in df.group_by("vf", maintain_order=True)],
+            [stratified_split(part) for _, part in df.group_by("vf", maintain_order=True)],
             how="diagonal",
         )
-    return split_in_time(df)
+    return stratified_split(df)
+
+
+def batches(df: pl.DataFrame, gap_s: float = 120.0) -> pl.DataFrame:
+    """Which batch of the campaign each event came from. A batch hands its answer key to
+    the engine in one go when it ends, so the labels' arrival times form clusters.
+    ``onda`` marks the batches that ran an account farm."""
+    t = df.select(pl.col("rotulado_em").unique().sort())["rotulado_em"]
+    starts = t.diff().dt.total_seconds().fill_null(gap_s + 1) > gap_s
+    ids = pl.DataFrame({"rotulado_em": t, "lote": starts.cum_sum()})
+    df = df.join(ids, on="rotulado_em", how="left")
+    farm = df.filter(pl.col("nivel") == 4)["lote"].unique().to_list()
+    return df.with_columns(pl.col("lote").is_in(farm).alias("onda"))
+
+
+def stratified_split(df: pl.DataFrame) -> pl.DataFrame:
+    """60/20/20 in time WITHIN each batch and kind of actor (scenario and level). The
+    final campaign runs each kind as its own batch, one after the other; a single split
+    in time would leave only the last batch in the test period, and every honest person
+    in it would be one who arrived while a farm was signing up accounts."""
+    df = batches(df)
+    return pl.concat(
+        [
+            split_in_time(part)
+            for _, part in df.group_by("lote", "fonte", "nivel", maintain_order=True)
+        ],
+        how="diagonal",
+    )
 
 
 def split_in_time(df: pl.DataFrame) -> pl.DataFrame:
